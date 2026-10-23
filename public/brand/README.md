@@ -1,0 +1,1 @@
+Place the approved official BuiltByBuzz logo here as logo.svg (or another approved format), then replace the typographic brand text in src/components/Layout.tsx and src/pages/Login.tsx with an accessible image. No logo has been invented for this project. Do not add a broken image before the official asset is available.
