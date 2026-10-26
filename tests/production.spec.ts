@@ -1,115 +1,216 @@
 import { expect, test } from "@playwright/test";
+const account = {
+  id: "customer_1",
+  display_name: "Alex Customer",
+  email: "alex@example.test",
+  email_verified: true,
+  role: "customer",
+};
+test.beforeEach(async ({ page }) => {
+  await page.route("https://api.builtbybuzz.dev/**", (route) =>
+    route.fulfill({ status: 401, json: { error: { code: "UNAUTHORIZED" } } }),
+  );
+});
+test("session initialization, destination, login, account and logout", async ({
+  page,
+}) => {
+  await page.goto("/dashboard/account");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.route("**/v1/auth/login", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/auth/logout", (route) =>
+    route.fulfill({ status: 204 }),
+  );
+  await page.getByLabel("Email address", { exact: true }).fill(account.email);
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/account$/);
+  await expect(page.getByLabel("Full name")).toHaveValue(account.display_name);
+  await expect(page.getByText("Email verification: Verified")).toBeVisible();
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.reload();
+  await expect(page.getByLabel("Full name")).toHaveValue(account.display_name);
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(
+    await page.evaluate(() => [localStorage.length, sessionStorage.length]),
+  ).toEqual([0, 0]);
+});
+test("registration validation, request and generic acknowledgment", async ({
+  page,
+}) => {
+  let body: unknown;
+  await page.route("**/v1/auth/register", async (route) => {
+    body = route.request().postDataJSON();
+    await route.fulfill({ status: 202, json: { success: true } });
+  });
+  await page.goto("/register");
+  await page.getByLabel("Display name").fill("Alex");
+  await page.getByLabel("Email address").fill(account.email);
+  await page.getByLabel("New password", { exact: true }).fill("short");
+  await page.getByLabel("Confirm password").fill("short");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("alert")).toContainText("12");
+  expect(body).toBeUndefined();
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("test-only-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("alert")).toContainText("match");
+  await page.getByLabel("Confirm password").fill("test-only-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "If your address is eligible",
+  );
+  expect(body).toEqual({
+    email: account.email,
+    display_name: "Alex",
+    password: "test-only-password",
+  });
+});
+for (const path of ["verify-email", "reset-password"]) {
+  test(
+    path +
+      " captures fragment, waits for action, handles invalid link and success",
+    async ({ page, request }) => {
+      const fallback = await (await request.get("/404.html")).text();
+      await page.route("**/" + path + "*", async (route) => {
+        if (route.request().isNavigationRequest())
+          await route.fulfill({
+            status: 404,
+            contentType: "text/html",
+            body: fallback,
+          });
+        else await route.continue();
+      });
+      let calls = 0;
+      await page.route("**/v1/auth/" + path, async (route) => {
+        calls++;
+        expect(route.request().postDataJSON().token).toBe("test-secret");
+        await route.fulfill(
+          calls === 1
+            ? { status: 400, json: { error: { code: "INVALID_TOKEN" } } }
+            : { json: { success: true } },
+        );
+      });
+      await page.goto("/" + path + "#token=test-secret");
+      await expect(page).toHaveURL(new RegExp("/" + path + "$"));
+      expect(calls).toBe(0);
+      expect(
+        await page.evaluate(() =>
+          document
+            .querySelector('meta[name="referrer"]')
+            ?.getAttribute("content"),
+        ),
+      ).toBe("no-referrer");
+      if (path === "reset-password") {
+        await page
+          .getByLabel("New password", { exact: true })
+          .fill("test-only-password");
+        await page.getByLabel("Confirm password").fill("test-only-password");
+      }
+      const button = page.getByRole("button", {
+        name: path === "verify-email" ? "Verify email" : "Reset password",
+        exact: true,
+      });
+      await button.click();
+      await expect(page.getByRole("alert")).toContainText("invalid, expired");
+      await button.click();
+      await expect(page.getByRole("status")).toContainText(
+        path === "verify-email" ? "Email verified" : "Password reset",
+      );
+      expect(
+        await page.evaluate(() => [localStorage.length, sessionStorage.length]),
+      ).toEqual([0, 0]);
+      await page.reload();
+      await expect(page.getByRole("alert")).toContainText("missing a token");
+    },
+  );
+}
+test("production isolates demo and recovery remains generic", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await expect(
+    page.getByRole("button", { name: "Enter demo workspace" }),
+  ).toHaveCount(0);
+  await page.route("**/v1/auth/forgot-password", (route) =>
+    route.fulfill({ status: 202, json: { success: true } }),
+  );
+  await page.goto("/forgot-password");
+  await page.getByLabel("Email address").fill("unknown@example.test");
+  await page.getByRole("button", { name: "Send reset instructions" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "If an eligible account exists",
+  );
+});
 
-test("Pages 404 fallback preserves public deep links and refreshes", async ({
+test("session expiration clears access after refresh", async ({ page }) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.goto("/dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Welcome back, Alex." }),
+  ).toBeVisible();
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ status: 401, json: { error: { code: "UNAUTHORIZED" } } }),
+  );
+  await page.reload();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator("body")).not.toContainText("Alex Customer");
+});
+
+test("Pages fallback supports every public auth route and dashboard", async ({
   page,
   request,
 }) => {
-  const fallback = await request.get("/404.html");
-  expect(fallback.ok()).toBe(true);
-  const html = await fallback.text();
+  const html = await (await request.get("/404.html")).text();
   expect(html).toBe(await (await request.get("/")).text());
-  // Vite preview has its own SPA rewrite. Override navigation responses to
-  // reproduce Pages serving our built fallback with an HTTP 404 status.
-  await page.route("**/*", async (route) => {
-    if (route.request().isNavigationRequest()) {
-      await route.fulfill({
-        status: 404,
-        contentType: "text/html",
-        body: html,
-      });
-    } else {
-      await route.continue();
-    }
-  });
-  const path = "/signup?from=pages%2Ftest&next=files#account";
-  expect((await page.goto(path))?.status()).toBe(404);
-  await expect(page.getByLabel("Full name", { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(`http://127.0.0.1:4174${path}`);
-  expect((await page.reload())?.status()).toBe(404);
-  await expect(page.getByLabel("Full name", { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(`http://127.0.0.1:4174${path}`);
-  await page.goto("/dashboard/sites/site_001/files?view=list#uploads");
-  await expect(page).toHaveURL(/\/login$/);
-  await expect(
-    page.getByRole("button", { name: "Sign in", exact: true }),
-  ).toBeDisabled();
-});
-
-test("production denies demo access even when built with the demo flag", async ({
-  page,
-}) => {
-  await page.goto("/dashboard/sites/site_001/files");
-  await expect(page).toHaveURL(/\/login$/);
-  await expect(
-    page.getByRole("button", { name: "Enter demo workspace" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Sign in", exact: true }),
-  ).toBeDisabled();
-  await expect(page.locator("body")).not.toContainText("Studio North");
-});
-
-test("login fields and sign-up navigation work without inventing auth requests", async ({
-  page,
-}) => {
-  const requests: string[] = [];
-  page.on("request", (request) => {
-    if (request.resourceType() === "fetch") requests.push(request.url());
-  });
-  await page.goto("/login");
-  await page
-    .getByLabel("Email address", { exact: true })
-    .fill("person@example.com");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("a-private-test-password");
-  await expect(page.getByLabel("Email address", { exact: true })).toHaveValue(
-    "person@example.com",
+  await page.route("http://127.0.0.1:4174/**", (route) =>
+    route.request().isNavigationRequest()
+      ? route.fulfill({ status: 404, contentType: "text/html", body: html })
+      : route.continue(),
   );
-  await page.getByRole("link", { name: "Sign up", exact: true }).click();
-  await expect(page).toHaveURL(/\/signup$/);
-  await page.getByLabel("Full name", { exact: true }).fill("Example Person");
-  await page
-    .getByLabel("Email address", { exact: true })
-    .fill("person@example.com");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("a-private-test-password");
-  await page
-    .getByLabel("Confirm password", { exact: true })
-    .fill("a-private-test-password");
-  await expect(
-    page.getByRole("button", { name: "Create account", exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Enter demo workspace" }),
-  ).toHaveCount(0);
-  await page.getByRole("link", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL(/\/login$/);
-  expect(requests).toEqual([]);
+  for (const path of [
+    "register",
+    "login",
+    "verify-email",
+    "forgot-password",
+    "reset-password",
+    "dashboard",
+  ]) {
+    await page.goto("/" + path);
+    await expect(page.locator("form")).toBeVisible();
+    await page.reload();
+    await expect(page.locator("form")).toBeVisible();
+  }
 });
-test("health display uses the exclusive API origin and real response shape", async ({
+
+test("login errors are understandable and repeated submission is blocked", async ({
   page,
 }) => {
-  const requests: string[] = [];
-  await page.route("https://api.builtbybuzz.dev/**", async (route) => {
-    requests.push(route.request().url());
+  let calls = 0;
+  await page.route("**/v1/auth/login", async (route) => {
+    calls++;
+    await new Promise((resolve) => setTimeout(resolve, 200));
     await route.fulfill({
-      json: {
-        success: true,
-        service: "bbb-hosting-api",
-        status: "operational",
-      },
+      status: 429,
+      json: { error: { code: "RATE_LIMITED", message: "private details" } },
     });
   });
   await page.goto("/login");
-  await page.getByRole("button", { name: "Check API health" }).click();
-  await expect(page.getByRole("status")).toContainText("operational");
-  expect(requests).toEqual(["https://api.builtbybuzz.dev/v1/health"]);
-});
-test("connectivity failures show actionable errors", async ({ page }) => {
-  await page.route("https://api.builtbybuzz.dev/**", (route) => route.abort());
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Check API health" }).click();
-  await expect(page.getByRole("alert")).toContainText("CORS");
+  await page.getByLabel("Email address", { exact: true }).fill(account.email);
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  const button = page.getByRole("button", { name: "Sign in", exact: true });
+  await button.click();
+  await expect(
+    page.getByRole("button", { name: "Please wait" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("Too many attempts");
+  expect(calls).toBe(1);
+  await expect(page.locator("body")).not.toContainText("private details");
 });

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, resolveApiBaseUrl } from "./api";
 import { connectivity } from "./connectivity";
 import { billing } from "./billing";
-import { auth } from "./auth";
 import { websites } from "./websites";
 import { files } from "./files";
 const origin = "https://api.builtbybuzz.dev";
@@ -121,9 +120,6 @@ describe("confirmed API requests", () => {
   });
   it("keeps unsupported services unavailable without mock successes", async () => {
     for (const request of [
-      auth.session(),
-      auth.login("person@example.com", "secret"),
-      auth.logout(),
       websites.list(),
       files.list("site_a", "/"),
       billing.summary(),
@@ -136,7 +132,7 @@ describe("confirmed API requests", () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await expect(connectivity.health()).rejects.toThrow(/CORS/);
     mockFetch.mockResolvedValueOnce(new Response("denied", { status: 403 }));
-    await expect(connectivity.health()).rejects.toThrow(/403/);
+    await expect(connectivity.health()).rejects.toThrow(/service could not/);
     mockFetch.mockResolvedValueOnce(
       new Response("{broken", {
         headers: { "Content-Type": "application/json" },

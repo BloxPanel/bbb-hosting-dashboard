@@ -31,6 +31,7 @@ export default function Account() {
             <input
               name="name"
               defaultValue={user?.name}
+              readOnly={!DEMO}
               required
               maxLength={80}
             />
@@ -40,8 +41,17 @@ export default function Account() {
             <input type="email" value={user?.email || ""} readOnly />
           </label>
           <p>
-            Email changes and security settings require the connected
-            authentication backend.
+            Email verification:{" "}
+            {user?.emailVerified === undefined
+              ? "Not supplied by the API"
+              : user.emailVerified
+                ? "Verified"
+                : "Not verified"}
+          </p>
+          {user?.role && <p>Account role: {user.role}</p>}
+          <p>
+            Email changes and security settings require the connected profile
+            management endpoints.
           </p>
           <button className="primary" disabled={!DEMO}>
             Save profile
@@ -68,8 +78,8 @@ export function Support() {
         <h2>Why are some actions unavailable?</h2>
         <p>
           This frontend is awaiting the separate bbb-hosting-api contract.
-          Production sign-in, payments, publication and remote file operations
-          are unavailable until integration is verified.
+          Payments, publication and remote file operations are unavailable until
+          integration is verified.
         </p>
         <h2>Where is my demo data stored?</h2>
         <p>

@@ -1,6 +1,6 @@
 # Dashboard API integration contract
 
-Status: **four browser-callable endpoints confirmed**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Redirects are rejected so an API redirect cannot send a request to a different host.
+Status: **customer authentication integrated from the supplied API contract**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Redirects are rejected so an API redirect cannot send a request to a different host.
 
 ## Configuration
 
@@ -18,37 +18,30 @@ Set `VITE_API_BASE_URL=https://api.builtbybuzz.dev`. Checked-in `.env.developmen
 
 Response payloads are preserved rather than substituted with local data. The root and checkout response schemas have not been provided; checkout's service returns an unknown payload until its response/redirect contract is confirmed. Checkout UI remains unavailable pending a verified authentication/token acquisition flow. No real checkout or webhook was called during verification. Missing project IDs or bearer tokens reject locally. Tokens are supplied per request, never hardcoded or persisted in browser storage.
 
-### Read-only verification on October 23, 2026
+## Authentication contract
 
-- GET `/v1/health`: HTTP 200, `{"success":true,"service":"bbb-hosting-api","status":"operational"}`.
-- GET `/v1/dev/project-count`: HTTP 200, `{"success":true,"total":1}`. This is an observed database-wide total and may change; it is not a fixture or the current user's count.
-- GET health with `Origin: https://hosting.builtbybuzz.dev`: HTTP 200, but no `Access-Control-Allow-Origin` response header was returned.
-- OPTIONS checkout with that Origin, requested method POST and requested headers `authorization,content-type`: HTTP 405 with `{"error":"METHOD_NOT_ALLOWED"}` and no CORS allow headers.
+The supplied API contract now confirms GET `/v1/auth/me` and POST `/v1/auth/register`, `login`, `logout`, `verify-email`, `forgot-password`, and `reset-password`. All use credentials include, JSON POST bodies, the exact API origin, and redirect rejection. The browser supplies Origin. No administrator bearer token is used for authentication.
 
-Direct HTTP checks therefore confirm endpoint availability, **not working browser CORS**. The browser connectivity panel will report a connection/CORS error until the backend permits the dashboard origin.
+Login/me normalize a real user from a direct object, `{ user }`, `{ data: user }`, or `{ data: { user } }`. Required fields are string `id`, `email`, and `display_name` (or `name`); optional `email_verified` boolean/0/1, `email_verified_at`, and `role` populate account details. Unexpected shapes fail rather than inventing a profile. **The supplied contract did not include exact response examples; confirm these shapes with the backend before release.**
 
-## CORS requirements for the backend team (not changed here)
+Registration sends email/display_name/password and handles 202 with a generic acknowledgment. Recovery also uses a generic acknowledgment. Verification/reset submit memory-only fragment tokens on user action. API error codes and status fallback produce sanitized user messages. A 401 from an existing session clears frontend account and resource state. Initial session failures show an error and leave the visitor logged out.
 
-The API and dashboard are distinct origins. The backend must allow `https://hosting.builtbybuzz.dev` on actual responses and errors, respond successfully to OPTIONS preflights for browser-callable routes, and allow the appropriate GET/POST methods and `Authorization, Content-Type` request headers. When choosing allow-origin dynamically, include `Vary: Origin`. Agree on separate development origins if local browser checks should reach the live API.
+## Remaining integration checks
 
-Current confirmed calls use `credentials: "omit"` and explicit bearer authentication for checkout. A future server-managed cookie session contract would require an intentional client change to `credentials: "include"`, an exact allow-origin, `Access-Control-Allow-Credentials: true`, appropriate cookie attributes, CSRF protection and a verified cross-origin session design. Do not treat bearer and cookie flows as interchangeable.
-
-No frontend proxy, no-cors mode, disabled browser security, Worker changes, DNS changes or backend changes are included. Network/CORS failures and HTTP/JSON errors surface actionable messages without fake success responses.
-
-## Integration procedure for remaining features
-
-1. Agree on authentication, paths, HTTP methods, error bodies, CSRF policy, pagination, and response validation with the bbb-hosting-api team.
-2. Add only verified capabilities to the centralized registry. Existing unregistered service names and their request shapes (including site identification headers) are proposals, not existing endpoints; they fail before fetch.
-3. Validate responses at the boundary against the interfaces in `src/types/index.ts`. Load authenticated website data into the app provider. Replace demo resource sources with API loading/error/retry flows.
-4. Enable login, registration and production mutation controls only when the corresponding verified integrations exist. Implement session-expiry handling and account switching that clears cached account data. Login fields are editable and `/signup` is navigable, but both submission buttons remain disabled. They make no authentication/registration requests.
-5. Exercise the authorization and billing acceptance cases below against staging before production release.
+- No live credentials, account creation, recovery emails or production mutations were used for testing. Automated tests mock API responses.
+- Verify credentialed CORS on the production dashboard origin, including OPTIONS and error responses: exact `Access-Control-Allow-Origin: https://hosting.builtbybuzz.dev`, `Access-Control-Allow-Credentials: true`, GET/POST and Content-Type. Confirm development origins separately.
+- Confirm the backend sets and revokes `__Host-bbb_session` with the intended Secure, HttpOnly, Path and SameSite settings and enforces its own Origin/CSRF checks. Frontend guards are presentation only.
+- Verify real email templates target `https://hosting.builtbybuzz.dev/verify-email#token=...` and `/reset-password#token=...`.
+- GitHub Pages fallback copies index.html and preserves fragments without redirects. The global no-referrer meta policy is effective in the document; a literal HTTP Referrer-Policy header requires hosting-layer support.
+- Website/file/domain/deployment and billing response contracts remain unconnected. These capabilities fail closed, contain no real demo-derived customer records, and must enforce ownership in the backend.
+- Profile updates remain disabled. Do not infer a profile-update or bearer acquisition endpoint from the cookie authentication contract.
 
 ## Required capabilities
 
 | Internal capability | Required behavior / result |
 | --- | --- |
 | auth.session | Authenticated UserAccount; distinguish unauthenticated, unavailable and forbidden |
-| auth.login / auth.register / auth.logout | Registration and server-managed session creation/revocation; agree on password or external identity flow |
+| auth.login / auth.register / auth.logout | Connected cookie authentication; verify real response shapes before release |
 | sites.list / sites.get | Owned HostedWebsite records by immutable site ID, pagination and separate publication/billing/entitlement states |
 | sites.create | Create a draft without paid entitlement; return stable ID |
 | sites.update | Update permitted name/settings; site ID is immutable |
@@ -72,7 +65,7 @@ Domain mutation and deployment publication service functions will be added once 
 
 ## Data and session expectations
 
-Use HTTPS. Current requests omit cookies; see the explicit bearer and future session requirements above. Agree on secure, HttpOnly server-managed cookies if that session approach is selected, plus SameSite behavior, CSRF protection and permitted development origins. Do not put Stripe secrets, R2 credentials or session tokens in VITE variables or localStorage. For JSON services, confirm Content-Type and request validation. Error responses must not reveal secrets; support actionable validation errors and request IDs. Confirm downloadable/checkout URLs against allowed HTTPS origins before navigating.
+Use HTTPS. Authentication includes the server-managed cookie; diagnostics omit credentials and checkout retains its separate bearer contract. Never put secrets or session tokens in VITE variables or browser storage. Confirm downloadable/checkout URLs against allowed HTTPS origins before navigating.
 
 All authorization is enforced by the backend. Frontend state and disabled buttons are presentation only. API results must never be inferred from demo state. Dates must include a clear timezone; missing renewal dates must remain unavailable.
 

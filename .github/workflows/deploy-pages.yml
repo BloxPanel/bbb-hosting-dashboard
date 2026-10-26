@@ -15,6 +15,9 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     env:
       VITE_API_BASE_URL: https://api.builtbybuzz.dev
       VITE_DEMO_MODE: "false"

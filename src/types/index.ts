@@ -9,6 +9,8 @@ export interface UserAccount {
   id: string;
   name: string;
   email: string;
+  emailVerified?: boolean;
+  role?: string;
 }
 export interface HostingEntitlement {
   siteId: string;

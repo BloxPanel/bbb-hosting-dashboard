@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import type { HostedWebsite, UserAccount, HostedFile, Domain } from "../types";
-import { DEMO } from "../services/api";
+import { ApiError, DEMO } from "../services/api";
 import { auth } from "../services/auth";
 import { initialSites } from "../services/demo";
 const Context = createContext<ReturnType<typeof useAppState> | null>(null);
@@ -20,15 +20,47 @@ function useAppState() {
   const [siteFiles, setSiteFiles] = useState<Record<string, HostedFile[]>>({});
   const [siteDomains, setSiteDomains] = useState<Record<string, Domain[]>>({});
   useEffect(() => {
+    if (!DEMO) {
+      setSites([]);
+      setSiteFiles({});
+      setSiteDomains({});
+    }
+  }, [user?.id]);
+  useEffect(() => {
+    if (DEMO) return;
+    const expire = () => {
+      setUser(null);
+      setSites([]);
+      setSiteFiles({});
+      setSiteDomains({});
+    };
+    window.addEventListener("bbb-session-expired", expire);
+    return () => window.removeEventListener("bbb-session-expired", expire);
+  }, []);
+  useEffect(() => {
+    let active = true;
     if (DEMO) {
       setLoading(false);
       return;
     }
     auth
       .session()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .then((account) => {
+        if (active) setUser(account);
+      })
+      .catch((error) => {
+        if (active) {
+          setUser(null);
+          if (!(error instanceof ApiError && error.status === 401))
+            setNotice(error.message);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
   return {
     user,

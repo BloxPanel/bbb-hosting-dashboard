@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useMatch, Link } from "react-router-dom";
+import { NavLink, Outlet, useMatch, Link, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Globe2,
@@ -16,9 +16,11 @@ import {
   GitBranch,
 } from "lucide-react";
 import { useApp } from "../app/state";
-import { DEMO } from "../services/api";
+import { ApiError, DEMO } from "../services/api";
 import { auth } from "../services/auth";
 export default function Layout() {
+  const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(
@@ -222,13 +224,27 @@ export default function Layout() {
             <button
               className="icon-button"
               aria-label="Log out"
-              onClick={() => {
-                if (DEMO) setUser(null);
-                else
-                  auth
-                    .logout()
-                    .then(() => setUser(null))
-                    .catch((e) => setNotice(e.message));
+              disabled={loggingOut}
+              onClick={async () => {
+                if (loggingOut) return;
+                setLoggingOut(true);
+                try {
+                  if (!DEMO) await auth.logout();
+                  setUser(null);
+                  navigate("/login", { replace: true });
+                } catch (e) {
+                  if (e instanceof ApiError && e.status === 401) {
+                    setUser(null);
+                    navigate("/login", { replace: true });
+                  } else
+                    setNotice(
+                      e instanceof Error
+                        ? e.message
+                        : "Could not log out. Please try again.",
+                    );
+                } finally {
+                  setLoggingOut(false);
+                }
               }}
             >
               <LogOut size={17} />

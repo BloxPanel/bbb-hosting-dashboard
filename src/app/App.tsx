@@ -4,6 +4,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 import { AppProvider, useApp } from "./state";
 import { LoadingSkeleton, EmptyState } from "../components/ui";
@@ -21,9 +22,18 @@ import FileManager from "../pages/FileManager";
 import AccountBilling, { SiteBilling } from "../pages/Billing";
 import Account, { Support } from "../pages/Account";
 function Protected() {
+  const location = useLocation();
   const { user, loading } = useApp();
   if (loading) return <LoadingSkeleton />;
-  return user ? <Outlet /> : <Navigate to="/login" replace />;
+  return user ? (
+    <Outlet />
+  ) : (
+    <Navigate
+      to="/login"
+      state={{ from: location.pathname + location.search }}
+      replace
+    />
+  );
 }
 export default function App() {
   return (
@@ -31,6 +41,19 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login key="login" />} />
+          <Route path="/register" element={<Login key="register" signUp />} />
+          <Route
+            path="/forgot-password"
+            element={<Login key="forgot" mode="forgot" />}
+          />
+          <Route
+            path="/verify-email"
+            element={<Login key="verify" mode="verify" />}
+          />
+          <Route
+            path="/reset-password"
+            element={<Login key="reset" mode="reset" />}
+          />
           <Route path="/signup" element={<Login key="signup" signUp />} />
           <Route element={<Protected />}>
             <Route path="/dashboard" element={<Layout />}>
