@@ -1,7 +1,11 @@
 name: Deploy dashboard to GitHub Pages
 
-# Deployment is deliberately opt-in; pushes and pull requests cannot deploy.
+# Automatically deploy on pushes to main.
+# Manual deployment remains available.
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
