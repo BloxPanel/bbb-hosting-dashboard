@@ -85,6 +85,18 @@ describe("confirmed API requests", () => {
       total: 81,
     });
   });
+  it("loads the authenticated project list with session cookies", async () => {
+    const payload = { projects: [] };
+    reply(payload);
+    expect(await api("projects.list")).toEqual(payload);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toBe(origin + "/v1/projects");
+    expect(init).toMatchObject({
+      method: "GET",
+      credentials: "include",
+      redirect: "error",
+    });
+  });
   it("sends checkout bearer authentication and project_id", async () => {
     reply({ result: "backend checkout payload" });
     await billing.checkout("immutable_project_id", "test-only-token");

@@ -76,6 +76,11 @@ export const routes: Readonly<Record<string, ConfirmedRoute>> = Object.freeze({
     method: "POST",
     session: true,
   }),
+  "projects.list": Object.freeze({
+    path: "/v1/projects",
+    method: "GET",
+    session: true,
+  }),
   "api.info": Object.freeze({ path: "/", method: "GET" }),
   "api.health": Object.freeze({ path: "/v1/health", method: "GET" }),
   "api.projectCount": Object.freeze({

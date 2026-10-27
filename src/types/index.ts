@@ -33,6 +33,14 @@ export interface HostedWebsite {
   subscription: HostingSubscription;
   updatedAt: string;
 }
+export interface HostedProject {
+  id: string;
+  name: string;
+  slug: string;
+  url: string;
+  hostingStatus: "active" | "inactive";
+  createdAt?: string;
+}
 export interface BillingSummary {
   subscriptions: HostingSubscription[];
   activeSubscriptions: number;

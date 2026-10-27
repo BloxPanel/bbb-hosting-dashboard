@@ -437,6 +437,9 @@ footer {
   gap: 17px;
   margin-bottom: 22px;
 }
+.stats.projects-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .stat {
   padding: 21px;
 }
@@ -604,6 +607,15 @@ tbody tr:hover {
   font-size: 10px;
   margin-top: 5px;
 }
+.project-url {
+  display: block;
+  color: #8293aa;
+  font-size: 10px;
+  margin-top: 5px;
+}
+.project-url:hover {
+  color: #e6af45;
+}
 .site-icon {
   width: 37px;
   height: 37px;
@@ -656,6 +668,11 @@ tbody tr:hover {
   background: #16372f;
   border-color: #285044;
   color: #79cfac;
+}
+.badge.inactive {
+  background: #232d3d;
+  border-color: #3b4657;
+  color: #acb8c9;
 }
 .badge.pending_payment,
 .badge.pending {
@@ -772,6 +789,12 @@ tbody tr:hover {
   display: flex;
   gap: 13px;
   padding: 0 22px 22px;
+}
+.projects-message {
+  padding: 22px;
+}
+.projects-message p {
+  margin: 0 0 12px;
 }
 .search {
   display: flex;

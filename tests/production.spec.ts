@@ -22,6 +22,9 @@ test("session initialization, destination, login, account and logout", async ({
   await page.route("**/v1/auth/logout", (route) =>
     route.fulfill({ status: 204 }),
   );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { projects: [] } }),
+  );
   await page.getByLabel("Email address", { exact: true }).fill(account.email);
   await page.getByLabel("Password", { exact: true }).fill("test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -152,6 +155,9 @@ test("session expiration clears access after refresh", async ({ page }) => {
   await page.route("**/v1/auth/me", (route) =>
     route.fulfill({ json: { user: account } }),
   );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { projects: [] } }),
+  );
   await page.goto("/dashboard");
   await expect(
     page.getByRole("heading", { name: "Welcome back, Alex." }),
@@ -162,6 +168,122 @@ test("session expiration clears access after refresh", async ({ page }) => {
   await page.reload();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.locator("body")).not.toContainText("Alex Customer");
+});
+
+test("authenticated dashboard loads only the API-owned projects", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({
+      json: {
+        projects: [
+          {
+            id: "project-from-api",
+            name: "API Website",
+            slug: "api-website",
+            status: "active",
+            created_at: "2026-10-12",
+          },
+        ],
+      },
+    }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await expect(page.getByText("API Website", { exact: true })).toBeVisible();
+  await expect(page.getByText("api-website.builtbybuzz.dev")).toHaveAttribute(
+    "href",
+    "https://api-website.builtbybuzz.dev",
+  );
+  await expect(
+    page.getByRole("table").getByText("Active", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("tbody tr")).toContainText("2026-10-12");
+  await expect(page.locator("main")).not.toContainText("Studio North");
+});
+
+test("authenticated dashboard shows an empty state for no projects", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { projects: [] } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await expect(page.getByRole("heading", { name: "No websites yet" })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("Studio North");
+});
+
+test("project-list authentication failure returns to the sign-in flow", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ status: 401, json: { error: { code: "UNAUTHORIZED" } } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator("body")).not.toContainText("API Website");
+});
+
+test("project-list API errors are visible and retryable", async ({ page }) => {
+  let requests = 0;
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) => {
+    requests++;
+    return route.fulfill(
+      requests === 1
+        ? { status: 503, json: { error: { message: "private details" } } }
+        : {
+            json: {
+              projects: [
+                {
+                  id: "project-from-retry",
+                  name: "Loaded After Retry",
+                  slug: "retry-site",
+                  status: "inactive",
+                },
+              ],
+            },
+          },
+    );
+  });
+
+  await page.goto("/dashboard/sites");
+  await expect(page.getByRole("alert")).toContainText(
+    "service could not complete",
+  );
+  await expect(page.locator("body")).not.toContainText("private details");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(
+    page.getByText("Loaded After Retry", { exact: true }),
+  ).toBeVisible();
+  expect(requests).toBe(2);
+});
+
+test("project-list loading state is displayed", async ({ page }) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ json: { projects: [] } });
+  });
+
+  await page.goto("/dashboard/sites");
+  await expect(page.getByRole("status")).toContainText("Loading your websites");
+  await expect(page.getByRole("heading", { name: "No websites yet" })).toBeVisible();
 });
 
 test("Pages fallback supports every public auth route and dashboard", async ({

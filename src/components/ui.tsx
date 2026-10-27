@@ -1,10 +1,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X, Globe2 } from "lucide-react";
-export function Badge({ value }: { value: string }) {
+export function Badge({ value, label = value }: { value: string; label?: string }) {
   return (
     <span className={`badge ${value}`}>
       <i />
-      {value.replaceAll("_", " ")}
+      {label.replaceAll("_", " ")}
     </span>
   );
 }
