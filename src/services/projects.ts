@@ -40,7 +40,7 @@ function normalizeProject(value: unknown): HostedProject {
   if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug))
     throw new Error("The API returned a project with an invalid subdomain.");
 
-  const rawStatus = value.hosting_status ?? value.status ?? value.active;
+  const rawStatus = value.hosting_active ?? value.hosting_status ?? value.status ?? value.active;
   if (typeof rawStatus !== "string" && typeof rawStatus !== "boolean")
     throw new Error("The API returned a project without a valid hosting status.");
   const status =
