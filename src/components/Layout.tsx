@@ -37,7 +37,7 @@ export default function Layout() {
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
-  const { user, setUser, setNotice, sites } = useApp();
+  const { user, setUser, setNotice, sites, projects } = useApp();
   const siteId = useMatch("/dashboard/sites/:siteId/*")?.params.siteId;
   const initials =
     user?.name
@@ -129,7 +129,9 @@ export default function Layout() {
               <Icon size={19} />
               <span className="sidebar-label">{label}</span>
               {label === "Websites" && (
-                <small className="count sidebar-label">{sites.length}</small>
+                <small className="count sidebar-label">
+                  {DEMO ? sites.length : projects.length}
+                </small>
               )}
             </NavLink>
           ))}
