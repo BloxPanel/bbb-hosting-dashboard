@@ -1,6 +1,6 @@
 # Dashboard API integration contract
 
-Status: **customer authentication and project listing integrated from the supplied API contract**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Redirects are rejected so an API redirect cannot send a request to a different host.
+Status: **customer authentication, project listing, and project creation integrated from the supplied API contract**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Redirects are rejected so an API redirect cannot send a request to a different host.
 
 ## Configuration
 
@@ -14,6 +14,7 @@ Set `VITE_API_BASE_URL=https://api.builtbybuzz.dev`. Checked-in `.env.developmen
 | GET | `/v1/health` | Manual API connectivity check on login/sign-up (`connectivity.health`) |
 | GET | `/v1/dev/project-count` | Development-only manual diagnostic (`connectivity.projectCount`); global database total, never an owned-site or account statistic |
 | GET | `/v1/projects` | Authenticated user's owned hosting projects (`projects.list`); the backend must enforce project ownership |
+| POST | `/v1/projects` | Creates an authenticated user's project (`projects.create`) from `{ "name": "...", "slug": "..." }`; uses the session cookie and never sends an owner ID |
 | POST | `/api/billing/checkout` | `billing.checkout(projectId, bearerToken)` sends JSON `{ "project_id": "..." }` and `Authorization: Bearer ...` |
 | POST | `/api/billing/webhook` | Stripe server-to-server only. Excluded from the client registry; the dashboard cannot call it through the API client. |
 
@@ -35,6 +36,7 @@ Registration sends email/display_name/password and handles 202 with a generic ac
 - Verify real email templates target `https://hosting.builtbybuzz.dev/verify-email#token=...` and `/reset-password#token=...`.
 - GitHub Pages fallback copies index.html and preserves fragments without redirects. The global no-referrer meta policy is effective in the document; a literal HTTP Referrer-Policy header requires hosting-layer support.
 - `GET /v1/projects` uses the session cookie and accepts an array, `{ "projects": [...] }`, `{ "data": [...] }`, or `{ "data": { "projects": [...] } }`. Project records require an ID, name, slug and hosting status (`hosting_status`, `status`, or boolean `active`); `created_at` is optional. Website URLs are built from the validated slug on `builtbybuzz.dev`. The backend must scope this endpoint to the authenticated user; frontend filtering is not an authorization boundary.
+- `POST /v1/projects` accepts only `name` and `slug` from the client. The current frontend requires a trimmed 1–80-character name, a 1–63-character DNS-label slug, and rejects common reserved subdomains (`admin`, `api`, `app`, `assets`, `cdn`, `dashboard`, `ftp`, `hosting`, `login`, `mail`, `register`, `static`, `status`, `support`, `www`). The supplied backend contract does not define name limits, slug syntax, the authoritative reserved list, or error-code schemas for HTTP 400/403/409; align these frontend checks and sanitized messages with the backend before release. The backend remains authoritative for validation, reservation, authentication, and ownership.
 - Website detail, file, domain, deployment and billing response contracts remain unconnected. These capabilities fail closed, contain no real demo-derived customer records, and must enforce ownership in the backend.
 - Profile updates remain disabled. Do not infer a profile-update or bearer acquisition endpoint from the cookie authentication contract.
 
@@ -45,6 +47,7 @@ Registration sends email/display_name/password and handles 202 with a generic ac
 | auth.session | Authenticated UserAccount; distinguish unauthenticated, unavailable and forbidden |
 | auth.login / auth.register / auth.logout | Connected cookie authentication; verify real response shapes before release |
 | projects.list | Authenticated user's owned projects with ID, name, slug, hosting status and optional creation date |
+| projects.create | Create a project using only name and slug; refresh the authenticated project list after HTTP 201 and use the backend's hosting status |
 | sites.get | Website detail by immutable site ID; response contract is not connected |
 | sites.create | Create a draft without paid entitlement; return stable ID |
 | sites.update | Update permitted name/settings; site ID is immutable |

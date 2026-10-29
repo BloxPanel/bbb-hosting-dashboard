@@ -262,7 +262,7 @@ test("project-list API errors are visible and retryable", async ({ page }) => {
 
   await page.goto("/dashboard/sites");
   await expect(page.getByRole("alert")).toContainText(
-    "service could not complete",
+    "temporarily unavailable",
   );
   await expect(page.locator("body")).not.toContainText("private details");
   await page.getByRole("button", { name: "Try again" }).click();
@@ -284,6 +284,225 @@ test("project-list loading state is displayed", async ({ page }) => {
   await page.goto("/dashboard/sites");
   await expect(page.getByRole("status")).toContainText("Loading your websites");
   await expect(page.getByRole("heading", { name: "No websites yet" })).toBeVisible();
+});
+
+test("creates a website and refreshes the API-owned project list", async ({
+  page,
+}) => {
+  const projectList = [
+    {
+      id: "mcclain-case",
+      name: "McClain Case",
+      slug: "mcclain-case",
+      status: "active",
+    },
+  ];
+  let projectListRequests = 0;
+  let createBody: unknown;
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", async (route) => {
+    if (route.request().method() === "POST") {
+      createBody = route.request().postDataJSON();
+      projectList.push({
+        id: "new-project",
+        name: "My Awesome Website",
+        slug: "my-awesome-website",
+        status: "inactive",
+      });
+      await route.fulfill({
+        status: 201,
+        json: { project: projectList[1] },
+      });
+      return;
+    }
+    projectListRequests++;
+    await route.fulfill({ json: { projects: projectList } });
+  });
+
+  await page.goto("/dashboard/sites");
+  await expect(page.getByText("McClain Case", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("My Awesome Website");
+  await expect(page.getByLabel("Subdomain")).toHaveValue(
+    "my-awesome-website",
+  );
+  await expect(page.getByText("my-awesome-website.builtbybuzz.dev")).toBeVisible();
+  await page.getByRole("button", { name: "Create website" }).last().click();
+
+  await expect(
+    page.getByText("My Awesome Website", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".count")).toHaveText("2");
+  const newProjectRow = page
+    .getByRole("row")
+    .filter({ hasText: "My Awesome Website" });
+  await expect(newProjectRow).toContainText("Inactive");
+  await expect(
+    page.getByRole("row").filter({ hasText: "McClain Case" }),
+  ).toContainText("Active");
+  expect(createBody).toEqual({
+    name: "My Awesome Website",
+    slug: "my-awesome-website",
+  });
+  expect(projectListRequests).toBe(2);
+});
+
+test("validates website name and subdomain before sending a request", async ({
+  page,
+}) => {
+  let createRequests = 0;
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", async (route) => {
+    if (route.request().method() === "POST") {
+      createRequests++;
+      await route.fulfill({ status: 201, json: {} });
+    } else await route.fulfill({ json: { projects: [] } });
+  });
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter a website name",
+  );
+  await page.getByLabel("Website name").fill("Website");
+  await page.getByLabel("Subdomain").fill("has spaces");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Use 1–63 lowercase letters",
+  );
+  await page.getByLabel("Subdomain").fill("www");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText("subdomain is reserved");
+  expect(createRequests).toBe(0);
+});
+
+test("creation authorization failure returns to sign in", async ({ page }) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 401, json: { error: { code: "UNAUTHORIZED" } } })
+      : route.fulfill({ json: { projects: [] } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("Expired Session Website");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator("body")).not.toContainText("Alex Customer");
+});
+
+test("blocks duplicate submissions while the create request is in flight", async ({
+  page,
+}) => {
+  let createRequests = 0;
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", async (route) => {
+    if (route.request().method() === "POST") {
+      createRequests++;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.fulfill({ status: 201, json: {} });
+    } else await route.fulfill({ json: { projects: [] } });
+  });
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("Waiting Website");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("button", { name: "Creating…" })).toBeDisabled();
+  await expect(page.getByLabel("Website name")).toBeDisabled();
+  await expect.poll(() => createRequests).toBe(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("shows a clear duplicate-subdomain error", async ({ page }) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 409,
+          json: { error: { code: "SLUG_TAKEN" } },
+        })
+      : route.fulfill({ json: { projects: [] } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("Taken Website");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "That subdomain is already in use",
+  );
+});
+
+test("asks unverified users to verify their email before creating a website", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 403,
+          json: {
+            error: {
+              code: "EMAIL_NOT_VERIFIED",
+              message: "private account details",
+            },
+          },
+        })
+      : route.fulfill({ json: { projects: [] } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("Unverified Website");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "verify your email address",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "private account details",
+  );
+});
+
+test("shows a sanitized message when project creation fails on the server", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 503,
+          json: { error: { message: "private infrastructure details" } },
+        })
+      : route.fulfill({ json: { projects: [] } }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("button", { name: "Create website" }).click();
+  await page.getByLabel("Website name").fill("Retry Website");
+  await page.getByRole("button", { name: "Create website" }).last().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "temporarily unavailable",
+  );
+  await expect(page.locator("body")).not.toContainText(
+    "private infrastructure details",
+  );
 });
 
 test("Pages fallback supports every public auth route and dashboard", async ({

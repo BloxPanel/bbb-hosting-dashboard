@@ -1,5 +1,41 @@
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import type { HostedProject } from "../types";
+
+const slugPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const reservedSlugs = new Set([
+  "admin",
+  "api",
+  "app",
+  "assets",
+  "cdn",
+  "dashboard",
+  "ftp",
+  "hosting",
+  "login",
+  "mail",
+  "register",
+  "static",
+  "status",
+  "support",
+  "www",
+]);
+
+export function validateProjectName(name: string): string | null {
+  const cleanName = name.trim();
+  return !cleanName || cleanName.length > 80
+    ? "Enter a website name between 1 and 80 characters."
+    : null;
+}
+
+export function validateProjectSlug(slug: string): string | null {
+  if (!slugPattern.test(slug)) {
+    return "Use 1–63 lowercase letters, numbers, or hyphens; the subdomain must start and end with a letter or number.";
+  }
+  if (reservedSlugs.has(slug)) {
+    return "That subdomain is reserved. Choose a different subdomain.";
+  }
+  return null;
+}
 
 type ProjectRecord = Record<string, unknown>;
 
@@ -75,4 +111,15 @@ export function parseProjects(payload: unknown): HostedProject[] {
 
 export const projects = {
   list: async () => parseProjects(await api<unknown>("projects.list")),
+  create: async (name: string, slug: string) => {
+    try {
+      return await api<unknown>("projects.create", {
+        body: JSON.stringify({ name, slug }),
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409)
+        throw new Error("That subdomain is already in use. Try another one.");
+      throw error;
+    }
+  },
 };

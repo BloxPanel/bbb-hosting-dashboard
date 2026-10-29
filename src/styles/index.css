@@ -1056,6 +1056,26 @@ dialog p {
   gap: 12px;
   margin-top: 24px;
 }
+.website-address-preview {
+  display: block;
+  margin-top: 10px;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+}
+.website-address-preview strong {
+  color: #dbe7f3;
+}
+.form-error {
+  color: #f0a4b4;
+  background: #442632;
+  border: 1px solid #70404d;
+  border-radius: 6px;
+  padding: 11px 13px;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
 .warning {
   background: #3a2d21;
   padding: 15px;

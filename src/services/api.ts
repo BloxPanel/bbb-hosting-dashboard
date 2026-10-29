@@ -81,6 +81,11 @@ export const routes: Readonly<Record<string, ConfirmedRoute>> = Object.freeze({
     method: "GET",
     session: true,
   }),
+  "projects.create": Object.freeze({
+    path: "/v1/projects",
+    method: "POST",
+    session: true,
+  }),
   "api.info": Object.freeze({ path: "/", method: "GET" }),
   "api.health": Object.freeze({ path: "/v1/health", method: "GET" }),
   "api.projectCount": Object.freeze({
@@ -105,23 +110,49 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
   ) {
+    const codeMessages: Record<string, string> = {
+      INVALID_INPUT: "Please check the information you entered.",
+      INVALID_TOKEN:
+        "This link is invalid, expired, or already used. Request a new link.",
+      INVALID_CREDENTIALS: "Email or password is incorrect.",
+      UNAUTHORIZED: "Your session has expired. Please sign in again.",
+      ORIGIN_DENIED: "Sign-in is not available from this address.",
+      RATE_LIMITED: "Too many attempts. Please wait before trying again.",
+      AUTH_UNAVAILABLE:
+        "Authentication is temporarily unavailable. Please try again later.",
+      EMAIL_NOT_VERIFIED:
+        "Please verify your email address before creating a website.",
+      EMAIL_UNVERIFIED:
+        "Please verify your email address before creating a website.",
+      EMAIL_VERIFICATION_REQUIRED:
+        "Please verify your email address before creating a website.",
+      DUPLICATE_SLUG: "That subdomain is already in use. Try another one.",
+      DUPLICATE_SUBDOMAIN:
+        "That subdomain is already in use. Try another one.",
+      RESERVED_SLUG: "That subdomain is reserved. Choose a different one.",
+      RESERVED_SUBDOMAIN:
+        "That subdomain is reserved. Choose a different one.",
+      SLUG_TAKEN: "That subdomain is already in use. Try another one.",
+      SLUG_ALREADY_EXISTS:
+        "That subdomain is already in use. Try another one.",
+      SUBDOMAIN_TAKEN: "That subdomain is already in use. Try another one.",
+      PROJECT_SLUG_TAKEN:
+        "That subdomain is already in use. Try another one.",
+    };
+    const normalizedCode = code.toUpperCase();
     super(
-      (
-        {
-          INVALID_INPUT: "Please check the information you entered.",
-          INVALID_TOKEN:
-            "This link is invalid, expired, or already used. Request a new link.",
-          INVALID_CREDENTIALS: "Email or password is incorrect.",
-          UNAUTHORIZED: "Your session has expired. Please sign in again.",
-          ORIGIN_DENIED: "Sign-in is not available from this address.",
-          RATE_LIMITED: "Too many attempts. Please wait before trying again.",
-          AUTH_UNAVAILABLE:
-            "Authentication is temporarily unavailable. Please try again later.",
-        } as Record<string, string>
-      )[code] ||
-        (status === 429
-          ? "Too many attempts. Please try again later."
-          : "The service could not complete your request. Please try again."),
+      codeMessages[normalizedCode] ||
+        (status === 401
+          ? "Your session has expired. Please sign in again."
+          : status === 400
+            ? "Please check the information you entered."
+            : status === 403
+              ? "You do not have permission to complete this request."
+          : status === 429
+            ? "Too many attempts. Please try again later."
+            : status >= 500
+              ? "The service is temporarily unavailable. Please try again later."
+              : "The service could not complete your request. Please try again."),
     );
   }
 }

@@ -4,6 +4,7 @@ import { connectivity } from "./connectivity";
 import { billing } from "./billing";
 import { websites } from "./websites";
 import { files } from "./files";
+import { projects } from "./projects";
 const origin = "https://api.builtbybuzz.dev";
 const mockFetch = vi.fn<typeof fetch>();
 beforeEach(() => {
@@ -97,6 +98,67 @@ describe("confirmed API requests", () => {
       redirect: "error",
     });
   });
+  it("creates a project with only name and slug using the session cookie", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "created-project",
+          name: "My Awesome Website",
+          slug: "my-awesome-website",
+          status: "inactive",
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await projects.create("My Awesome Website", "my-awesome-website");
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toBe(origin + "/v1/projects");
+    expect(init).toMatchObject({
+      method: "POST",
+      credentials: "include",
+      redirect: "error",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: "My Awesome Website",
+      slug: "my-awesome-website",
+    });
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty("owner_id");
+  });
+  it.each([
+    [400, "check the information"],
+    [401, "session has expired"],
+    [403, "permission to complete"],
+    [409, "subdomain is already in use"],
+    [429, "Too many attempts"],
+    [503, "temporarily unavailable"],
+  ])(
+    "returns a safe, actionable creation error for HTTP %i",
+    async (status, message) => {
+      mockFetch.mockResolvedValueOnce(new Response("{}", { status }));
+      await expect(projects.create("Example", "example")).rejects.toThrow(
+        message,
+      );
+    },
+  );
+  it("explains unverified-account errors without exposing backend details", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "EMAIL_NOT_VERIFIED",
+            message: "private account details",
+          },
+        }),
+        { status: 403 },
+      ),
+    );
+    await expect(projects.create("Example", "example")).rejects.toThrow(
+      "verify your email",
+    );
+  });
   it("sends checkout bearer authentication and project_id", async () => {
     reply({ result: "backend checkout payload" });
     await billing.checkout("immutable_project_id", "test-only-token");
@@ -144,7 +206,7 @@ describe("confirmed API requests", () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await expect(connectivity.health()).rejects.toThrow(/CORS/);
     mockFetch.mockResolvedValueOnce(new Response("denied", { status: 403 }));
-    await expect(connectivity.health()).rejects.toThrow(/service could not/);
+    await expect(connectivity.health()).rejects.toThrow(/permission to complete/);
     mockFetch.mockResolvedValueOnce(
       new Response("{broken", {
         headers: { "Content-Type": "application/json" },

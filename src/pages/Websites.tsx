@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus,
@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import { useApp } from "../app/state";
 import { Badge, EmptyState, Modal, PageHeading } from "../components/ui";
-import { DEMO } from "../services/api";
+import { ApiError, DEMO } from "../services/api";
+import {
+  projects as projectApi,
+  validateProjectName,
+  validateProjectSlug,
+} from "../services/projects";
 import { summarize } from "../services/billing";
 import type { HostedProject } from "../types";
 type WebsiteRow = Pick<
@@ -24,56 +29,111 @@ type WebsiteRow = Pick<
   publication?: "published" | "draft";
   billingStatus?: string;
 };
+function slugFromName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 63)
+    .replace(/-$/, "");
+}
 export function CreateWebsite() {
   const [open, setOpen] = useState(false);
-  const { setSites, setNotice } = useApp();
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const { setSites, setNotice, reloadProjects } = useApp();
+  const openForm = () => {
+    setName("");
+    setSlug("");
+    setSlugEdited(false);
+    setError("");
+    setOpen(true);
+  };
+  const closeForm = () => {
+    if (!submittingRef.current) setOpen(false);
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submittingRef.current) return;
+    const cleanName = name.trim();
+    const cleanSlug = slug.trim().toLowerCase();
+    const nameError = validateProjectName(cleanName);
+    const slugError = validateProjectSlug(cleanSlug);
+    if (nameError || slugError) {
+      setError(nameError || slugError || "Please check your website details.");
+      return;
+    }
+
+    setError("");
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      if (DEMO) {
+        const id = crypto.randomUUID();
+        setSites((sites) => [
+          {
+            id,
+            name: cleanName,
+            slug: cleanSlug,
+            url: "",
+            publication: "draft",
+            entitlement: { siteId: id, source: "none", eligible: false },
+            subscription: {
+              siteId: id,
+              status: "draft",
+              annualPriceUsd: 10,
+            },
+            updatedAt: new Date().toISOString().slice(0, 10),
+          },
+          ...sites,
+        ]);
+        setNotice("Demo website created locally. Hosting is not activated.");
+      } else {
+        await projectApi.create(cleanName, cleanSlug);
+        reloadProjects();
+        setNotice(
+          "Website created. Hosting remains inactive until you activate it.",
+        );
+      }
+      setOpen(false);
+    } catch (requestError) {
+      setError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : requestError instanceof Error
+            ? requestError.message
+            : "Could not create your website. Please try again.",
+      );
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
   return (
     <>
       <button
         className="primary"
-        disabled={!DEMO}
-        onClick={() => setOpen(true)}
+        onClick={openForm}
       >
         <Plus size={17} />
         Create website
       </button>
       {open && (
-        <Modal title="A new home for your idea" onClose={() => setOpen(false)}>
+        <Modal
+          title="A new home for your idea"
+          onClose={closeForm}
+          closeDisabled={submitting}
+        >
           <p>
-            Create a local demo draft. Hosting requires a separate $10 annual
-            subscription for this website.
+            {DEMO
+              ? "Create a local demo draft. Hosting requires a separate $10 annual subscription for this website."
+              : "Choose a name and a subdomain for your website. Hosting stays inactive until you activate it."}
           </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const name = String(
-                new FormData(e.currentTarget).get("name"),
-              ).trim();
-              if (!name) return;
-              const id = crypto.randomUUID();
-              setSites((s) => [
-                {
-                  id,
-                  name,
-                  slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-                  url: "",
-                  publication: "draft",
-                  entitlement: { siteId: id, source: "none", eligible: false },
-                  subscription: {
-                    siteId: id,
-                    status: "draft",
-                    annualPriceUsd: 10,
-                  },
-                  updatedAt: new Date().toISOString().slice(0, 10),
-                },
-                ...s,
-              ]);
-              setOpen(false);
-              setNotice(
-                "Demo website created locally. Hosting is not activated.",
-              );
-            }}
-          >
+          <form onSubmit={submit} noValidate>
             <label>
               Website name
               <input
@@ -81,18 +141,71 @@ export function CreateWebsite() {
                 name="name"
                 required
                 maxLength={80}
-                placeholder="My next big idea"
+                aria-label="Website name"
+                value={name}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setName(value);
+                  if (!slugEdited) setSlug(slugFromName(value));
+                  setError("");
+                }}
+                aria-describedby="website-name-help"
+                disabled={submitting}
+                placeholder="My Awesome Website"
               />
+              <small id="website-name-help">Up to 80 characters.</small>
             </label>
+            <label>
+              Subdomain
+              <input
+                name="slug"
+                value={slug}
+                required
+                onChange={(event) => {
+                  setSlugEdited(true);
+                  setSlug(event.target.value.toLowerCase());
+                  setError("");
+                }}
+                maxLength={63}
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby="website-address-preview"
+                disabled={submitting}
+                placeholder="my-awesome-website"
+              />
+              <small
+                className="website-address-preview"
+                id="website-address-preview"
+                aria-live="polite"
+              >
+                Preview:{" "}
+                <strong>
+                  {slug || "your-subdomain"}.builtbybuzz.dev
+                </strong>
+              </small>
+            </label>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
             <div className="modal-actions">
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setOpen(false)}
+                onClick={closeForm}
+                disabled={submitting}
               >
                 Cancel
               </button>
-              <button className="primary">Create demo draft</button>
+              <button className="primary" disabled={submitting}>
+                {submitting
+                  ? "Creating…"
+                  : DEMO
+                    ? "Create demo draft"
+                    : "Create website"}
+              </button>
             </div>
           </form>
         </Modal>
