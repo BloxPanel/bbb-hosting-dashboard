@@ -139,12 +139,19 @@ export default function Layout() {
             <>
               <div className="nav-caption sidebar-label">CURRENT WEBSITE</div>
               {[
-                ["Overview", "", Globe2],
-                ["Files", "/files", FolderOpen],
-                ["Domains", "/domains", Globe2],
-                ["Deployments", "/deployments", GitBranch],
-                ["Billing", "/billing", CreditCard],
-                ["Settings", "/settings", Settings],
+                ...(DEMO
+                  ? [
+                      ["Overview", "", Globe2],
+                      ["Files", "/files", FolderOpen],
+                      ["Domains", "/domains", Globe2],
+                      ["Deployments", "/deployments", GitBranch],
+                      ["Billing", "/billing", CreditCard],
+                      ["Settings", "/settings", Settings],
+                    ]
+                  : [
+                      ["Overview", "", Globe2],
+                      ["Files", "/files", FolderOpen],
+                    ]),
               ].map(([label, path, Icon]) => {
                 const I = Icon as typeof Globe2;
                 return (

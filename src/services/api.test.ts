@@ -195,12 +195,139 @@ describe("confirmed API requests", () => {
   it("keeps unsupported services unavailable without mock successes", async () => {
     for (const request of [
       websites.list(),
-      files.list("site_a", "/"),
       billing.summary(),
       billing.portal("site_a"),
     ])
       await expect(request).rejects.toThrow(/unavailable/);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+  it("uses the project-scoped file listing and storage contracts with cookies", async () => {
+    reply({
+      success: true,
+      files: [
+        {
+          path: "assets/site.css",
+          size: 125,
+          content_type: "text/css; charset=utf-8",
+          updated_at: "2026-10-29T12:00:00.000Z",
+        },
+      ],
+      next_cursor: "page-2",
+    });
+    const listing = await files.list("project_1");
+    expect(listing).toMatchObject({
+      nextCursor: "page-2",
+      files: [
+        {
+          id: "assets/site.css",
+          path: "/assets/",
+          name: "site.css",
+          size: 125,
+          mime: "text/css; charset=utf-8",
+        },
+      ],
+    });
+    const [listUrl, listInit] = mockFetch.mock.calls[0];
+    expect(String(listUrl)).toBe(
+      origin + "/v1/projects/project_1/files?limit=100",
+    );
+    expect(listInit).toMatchObject({
+      method: "GET",
+      credentials: "include",
+      redirect: "error",
+    });
+
+    reply({
+      success: true,
+      storage: {
+        bytes_used: 125,
+        file_count: 1,
+        file_count_limit: 10_000,
+        quota_bytes: 1024 * 1024 * 1024,
+        percent_used: 0,
+      },
+    });
+    expect(await files.storage("project_1")).toMatchObject({
+      bytesUsed: 125,
+      fileCount: 1,
+      quotaBytes: 1024 * 1024 * 1024,
+    });
+    expect(String(mockFetch.mock.calls[1][0])).toBe(
+      origin + "/v1/projects/project_1/storage",
+    );
+    expect(mockFetch.mock.calls[1][1]).toMatchObject({
+      credentials: "include",
+      redirect: "error",
+    });
+  });
+  it("paginates and encodes file routes without accepting invalid project IDs", async () => {
+    reply({ success: true, files: [], next_cursor: null });
+    await files.list("project_1", "opaque cursor");
+    expect(String(mockFetch.mock.calls[0][0])).toBe(
+      origin +
+        "/v1/projects/project_1/files?limit=100&cursor=opaque+cursor",
+    );
+
+    reply({ success: true, deleted: "assets/site.css" });
+    await files.remove("project_1", "assets/site.css");
+    expect(String(mockFetch.mock.calls[1][0])).toBe(
+      origin + "/v1/projects/project_1/files/assets/site.css",
+    );
+    expect(mockFetch.mock.calls[1][1]).toMatchObject({
+      method: "DELETE",
+      credentials: "include",
+    });
+
+    await expect(files.storage("bad/id")).rejects.toThrow(/project ID/);
+    await expect(files.remove("project_1", "../index.html")).rejects.toThrow(
+      /file path is invalid/,
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+  it("downloads project file bytes through the cookie-authenticated API", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response("<h1>Preview</h1>", {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }),
+    );
+    const result = await files.download("project_1", "assets/site file.html");
+    expect(await result.blob.text()).toBe("<h1>Preview</h1>");
+    expect(result.contentType).toBe("text/html; charset=utf-8");
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toBe(
+      origin + "/v1/projects/project_1/files/assets/site%20file.html",
+    );
+    expect(init).toMatchObject({
+      method: "GET",
+      credentials: "include",
+      redirect: "error",
+    });
+  });
+  it("maps file API session expiration and permission errors to safe messages", async () => {
+    const expired = vi.fn();
+    const eventTarget = new EventTarget();
+    vi.stubGlobal("window", eventTarget);
+    eventTarget.addEventListener("bbb-session-expired", expired);
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false, error: "UNAUTHORIZED" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(files.list("project_1")).rejects.toThrow(/session has expired/);
+    expect(expired).toHaveBeenCalledOnce();
+    eventTarget.removeEventListener("bbb-session-expired", expired);
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: "EMAIL_VERIFICATION_REQUIRED",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    await expect(files.storage("project_1")).rejects.toThrow(/verify your email/);
   });
   it("reports network/CORS, HTTP, and malformed JSON errors", async () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));

@@ -6,6 +6,7 @@ import {
   useOutletContext,
   useParams,
   useNavigate,
+  useLocation,
 } from "react-router-dom";
 import {
   ArrowLeft,
@@ -23,13 +24,47 @@ import { DEMO } from "../services/api";
 import { initialDomains, initialDeployments } from "../services/demo";
 export function SiteLayout() {
   const { siteId } = useParams();
-  const { sites } = useApp();
-  const site = sites.find((s) => s.id === siteId);
+  const location = useLocation();
+  const { sites, projects } = useApp();
+  const demoSite = sites.find((s) => s.id === siteId);
+  const project = projects.find((item) => item.id === siteId);
+  const site: HostedWebsite | undefined = DEMO
+    ? demoSite
+    : project
+      ? {
+          id: project.id,
+          name: project.name,
+          slug: project.slug,
+          url: project.url,
+          publication: "draft",
+          entitlement: {
+            siteId: project.id,
+            source: "none",
+            eligible: project.hostingStatus === "active",
+          },
+          subscription: {
+            siteId: project.id,
+            status: project.hostingStatus === "active" ? "active" : "draft",
+            annualPriceUsd: 10,
+          },
+          updatedAt: project.createdAt || "",
+        }
+      : undefined;
   if (!site)
     return (
       <EmptyState
         title="Website not found"
         description="This website is not available in your workspace."
+      />
+    );
+  if (
+    !DEMO &&
+    /\/(domains|deployments|billing|settings)$/.test(location.pathname)
+  )
+    return (
+      <EmptyState
+        title="This website area is not connected yet"
+        description="Only project overview and file management are currently available for your real website."
       />
     );
   return (
@@ -42,17 +77,34 @@ export function SiteLayout() {
         eyebrow="WEBSITE PROJECT"
         title={site.name}
         description={`Immutable website ID · ${site.id}`}
-        action={<Badge value={site.publication} />}
+        action={
+          <Badge
+            value={DEMO ? site.publication : project?.hostingStatus || "inactive"}
+            label={
+              DEMO
+                ? site.publication
+                : project?.hostingStatus === "active"
+                  ? "Hosting active"
+                  : "Hosting inactive"
+            }
+          />
+        }
       />
       <nav className="tabs">
-        {[
+        {(DEMO
+          ? [
           ["Overview", ""],
           ["Files", "/files"],
           ["Domains", "/domains"],
           ["Deployments", "/deployments"],
           ["Billing", "/billing"],
           ["Settings", "/settings"],
-        ].map(([label, path]) => (
+            ]
+          : [
+              ["Overview", ""],
+              ["Files", "/files"],
+            ]
+        ).map(([label, path]) => (
           <NavLink key={path} end to={`/dashboard/sites/${site.id}${path}`}>
             {label}
           </NavLink>
@@ -67,6 +119,33 @@ export function useSite() {
 }
 export function SiteOverview() {
   const site = useSite();
+  const { projects } = useApp();
+  const project = projects.find((item) => item.id === site.id);
+  if (!DEMO && project)
+    return (
+      <section className="card padded">
+        <Globe2 className="cyan" />
+        <h2>Your website</h2>
+        <p>Primary hosting address</p>
+        <a className="break-all" href={project.url} target="_blank" rel="noreferrer">
+          {project.url}
+          <ArrowUpRight size={15} />
+        </a>
+        <div className="detail-row">
+          <span>Hosting status</span>
+          <Badge
+            value={project.hostingStatus}
+            label={project.hostingStatus === "active" ? "Active" : "Inactive"}
+          />
+        </div>
+        <p className="integration-note">
+          Website files remain private while hosting is inactive. Uploading files does not publish or deploy this website.
+        </p>
+        <Link className="secondary" to="files">
+          Manage website files <FolderOpen size={16} />
+        </Link>
+      </section>
+    );
   return (
     <>
       <div className="details-grid">

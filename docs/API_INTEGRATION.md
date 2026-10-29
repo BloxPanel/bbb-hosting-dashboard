@@ -1,6 +1,6 @@
 # Dashboard API integration contract
 
-Status: **customer authentication, project listing, and project creation integrated from the supplied API contract**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Redirects are rejected so an API redirect cannot send a request to a different host.
+Status: **customer authentication, project listing/creation, and project file management integrated from the supplied API contract**. This repository is the frontend only. All backend requests use `src/services/api.ts` and exclusively resolve against `https://api.builtbybuzz.dev`. The client rejects missing configuration, alternate origins (including dashboard and workers.dev hosts), URL paths/credentials/query/fragment in the base, unsupported capabilities, and HTTP method overrides. It never falls back to the current page's origin. Fetch requests reject redirects; browser-native XHR uploads verify that the final response origin remains the configured API origin.
 
 ## Configuration
 
@@ -15,6 +15,12 @@ Set `VITE_API_BASE_URL=https://api.builtbybuzz.dev`. Checked-in `.env.developmen
 | GET | `/v1/dev/project-count` | Development-only manual diagnostic (`connectivity.projectCount`); global database total, never an owned-site or account statistic |
 | GET | `/v1/projects` | Authenticated user's owned hosting projects (`projects.list`); the backend must enforce project ownership |
 | POST | `/v1/projects` | Creates an authenticated user's project (`projects.create`) from `{ "name": "...", "slug": "..." }`; uses the session cookie and never sends an owner ID |
+| GET | `/v1/projects/:projectId/files?limit=100&cursor=…` | Credentialed, paginated list: `{ success, files: [{ path, size, content_type, updated_at }], next_cursor }` |
+| POST | `/v1/projects/:projectId/files?path=…` | Credentialed raw `File` body upload: `{ success, file: { path, size, content_type } }` |
+| GET | `/v1/projects/:projectId/files/*` | Credentialed binary download for preview/download |
+| PUT | `/v1/projects/:projectId/files/*` | Credentialed raw `File` body replacement: `{ success, file: { path, size, content_type } }` |
+| DELETE | `/v1/projects/:projectId/files/*` | Credentialed file deletion: `{ success, deleted }` |
+| GET | `/v1/projects/:projectId/storage` | Credentialed usage: `{ success, storage: { bytes_used, file_count, file_count_limit, quota_bytes, percent_used } }` |
 | POST | `/api/billing/checkout` | `billing.checkout(projectId, bearerToken)` sends JSON `{ "project_id": "..." }` and `Authorization: Bearer ...` |
 | POST | `/api/billing/webhook` | Stripe server-to-server only. Excluded from the client registry; the dashboard cannot call it through the API client. |
 
@@ -31,14 +37,27 @@ Registration sends email/display_name/password and handles 202 with a generic ac
 ## Remaining integration checks
 
 - No live credentials, account creation, recovery emails or production mutations were used for testing. Automated tests mock API responses.
-- Verify credentialed CORS on the production dashboard origin, including OPTIONS and error responses: exact `Access-Control-Allow-Origin: https://hosting.builtbybuzz.dev`, `Access-Control-Allow-Credentials: true`, GET/POST and Content-Type. Confirm development origins separately.
+- Verify credentialed CORS on the production dashboard origin, including OPTIONS and error responses: exact `Access-Control-Allow-Origin: https://hosting.builtbybuzz.dev`, `Access-Control-Allow-Credentials: true`, GET/POST/PUT/DELETE and Content-Type. Confirm development origins separately.
 - Confirm the backend sets and revokes `__Host-bbb_session` with the intended Secure, HttpOnly, Path and SameSite settings and enforces its own Origin/CSRF checks. Frontend guards are presentation only.
 - Verify real email templates target `https://hosting.builtbybuzz.dev/verify-email#token=...` and `/reset-password#token=...`.
 - GitHub Pages fallback copies index.html and preserves fragments without redirects. The global no-referrer meta policy is effective in the document; a literal HTTP Referrer-Policy header requires hosting-layer support.
 - `GET /v1/projects` uses the session cookie and accepts an array, `{ "projects": [...] }`, `{ "data": [...] }`, or `{ "data": { "projects": [...] } }`. Project records require an ID, name, slug and hosting status (`hosting_status`, `status`, or boolean `active`); `created_at` is optional. Website URLs are built from the validated slug on `builtbybuzz.dev`. The backend must scope this endpoint to the authenticated user; frontend filtering is not an authorization boundary.
 - `POST /v1/projects` accepts only `name` and `slug` from the client. The current frontend requires a trimmed 1–80-character name, a 1–63-character DNS-label slug, and rejects common reserved subdomains (`admin`, `api`, `app`, `assets`, `cdn`, `dashboard`, `ftp`, `hosting`, `login`, `mail`, `register`, `static`, `status`, `support`, `www`). The supplied backend contract does not define name limits, slug syntax, the authoritative reserved list, or error-code schemas for HTTP 400/403/409; align these frontend checks and sanitized messages with the backend before release. The backend remains authoritative for validation, reservation, authentication, and ownership.
-- Website detail, file, domain, deployment and billing response contracts remain unconnected. These capabilities fail closed, contain no real demo-derived customer records, and must enforce ownership in the backend.
+- Website detail, domain, deployment and billing response contracts remain unconnected. These capabilities fail closed and must enforce ownership in the backend.
+- Project file writes require `Content-Length`. The dashboard sends a browser-native `File` with XHR and never sets the forbidden header itself; the Playwright browser test checks the actual request length. HTTP 411 is reported as a compatibility error if a browser omits it.
+- File mutation requires the production dashboard Origin. The backend accepts only `https://hosting.builtbybuzz.dev`; production writes must be verified from that origin.
+- Before using the file API, apply backend migration `0006_project_file_management.sql` and deploy the updated Worker. The dashboard does not run migrations or deploy the Worker.
 - Profile updates remain disabled. Do not infer a profile-update or bearer acquisition endpoint from the cookie authentication contract.
+
+### Project file-management rules
+
+The backend permits only static website extensions: HTML, CSS, JS/MJS, JSON, webmanifest, TXT, Markdown, XML, CSV, SVG, PNG/JPEG/GIF/WebP/AVIF/ICO/BMP, WOFF/WOFF2/TTF/OTF/EOT, PDF, source maps and WASM. The dashboard mirrors that allowlist and rejects protected infrastructure names and unsafe path segments before upload. Backend validation remains authoritative.
+
+Limits are 25 MiB per file, 1 GiB and 10,000 files per project, 100 files per listing page, 30 mutations/minute, 60 file reads/minute and 10 storage scans/minute. The UI checks returned storage usage and refreshes listing/storage after mutations. API errors are sanitized into actionable messages. Listing is paginated because the backend endpoint lists the project prefix rather than accepting a directory filter; folders are synthesized from the loaded object paths.
+
+The upload handler requires `Content-Length`, which JavaScript may not set directly. XHR sends the original `File` body so the browser calculates transport framing and exposes upload progress; the application does not attempt to set a forbidden header. If the deployed Worker returns `CONTENT_LENGTH_REQUIRED` from a supported browser, the backend must be adjusted (for example, accept a trustworthy declared size through an allowed header or derive it safely from a supported request format) before production use.
+
+Project files are private while hosting is inactive. Uploading and replacement do not publish or deploy a website. The backend checks project ownership for every operation and does not accept an owner ID or expose R2 credentials. Demo mode only changes files in browser memory and never invokes file APIs.
 
 ## Required capabilities
 
@@ -52,10 +71,8 @@ Registration sends email/display_name/password and handles 202 with a generic ac
 | sites.create | Create a draft without paid entitlement; return stable ID |
 | sites.update | Update permitted name/settings; site ID is immutable |
 | sites.delete | Confirm deletion, handle files/domains and explain subscription disposition |
-| files.list | Directory listing of HostedFile records with sizes, MIME types, timestamps and stable IDs |
-| files.upload | Multipart or signed upload flow scoped to a site ID and path; limits, collision policy, progress and errors |
-| files.rename / files.delete | Site-scoped file/folder operations, traversal protection, recursive-delete semantics |
-| files.download | Authorized file bytes or a short-lived download URL; expiry and allowed origins |
+| files.list | Project-scoped file listing with pagination; virtual folders are derived from object paths |
+| files.upload / files.replace / files.delete / files.download / files.storage | Connected through the session cookie; API verifies project ownership and applies path, extension, quota and rate-limit checks |
 | billing.entitlement | HostingEntitlement for one specific site, including explicit backend-issued owner grant |
 | billing.site | HostingSubscription for that site; actual renewal date, price and status |
 | billing.checkout (request confirmed; response integration pending) | Server creates Stripe Checkout Session for the authorized `project_id`; verify the response and safe redirect contract |

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createServer } from "node:http";
 const account = {
   id: "customer_1",
   display_name: "Alex Customer",
@@ -194,7 +195,7 @@ test("authenticated dashboard loads only the API-owned projects", async ({
 
   await page.goto("/dashboard/sites");
   await expect(page.getByText("API Website", { exact: true })).toBeVisible();
-  await expect(page.getByText("api-website.builtbybuzz.dev")).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Open website" })).toHaveAttribute(
     "href",
     "https://api-website.builtbybuzz.dev",
   );
@@ -203,6 +204,349 @@ test("authenticated dashboard loads only the API-owned projects", async ({
   ).toBeVisible();
   await expect(page.locator("tbody tr")).toContainText("2026-10-12");
   await expect(page.locator("main")).not.toContainText("Studio North");
+});
+
+test("project file manager lists, uploads, replaces and deletes with browser sessions", async ({
+  page,
+}) => {
+  const project = {
+    id: "project-files",
+    name: "File Test Website",
+    slug: "file-test-website",
+    status: "inactive",
+  };
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { projects: [project] } }),
+  );
+  let entries = [
+    {
+      path: "index.html",
+      size: 12,
+      content_type: "text/html; charset=utf-8",
+      updated_at: "2026-10-29T12:00:00.000Z",
+    },
+    {
+      path: "assets/site.css",
+      size: 23,
+      content_type: "text/css; charset=utf-8",
+      updated_at: "2026-10-29T12:00:00.000Z",
+    },
+    {
+      path: "archive/notes.txt",
+      size: 11,
+      content_type: "text/plain; charset=utf-8",
+      updated_at: "2026-10-29T12:00:00.000Z",
+    },
+  ];
+  const mutations: Array<{ method: string; path: string; bodyLength: number }> = [];
+  await page.route("**/v1/projects/project-files/files**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const headers = {
+      "access-control-allow-origin": "http://127.0.0.1:4174",
+      "access-control-allow-credentials": "true",
+      vary: "Origin",
+    };
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          ...headers,
+          "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "access-control-allow-headers": "content-type",
+        },
+      });
+      return;
+    }
+    if (request.method() === "GET" && url.pathname.endsWith("/files")) {
+      const page = url.searchParams.has("cursor") ? entries.slice(2) : entries.slice(0, 2);
+      await route.fulfill({
+        json: {
+          success: true,
+          files: page,
+          next_cursor: url.searchParams.has("cursor") ? null : "page-2",
+        },
+        headers,
+      });
+      return;
+    }
+    const path =
+      url.searchParams.get("path") ||
+      decodeURIComponent(url.pathname.split("/files/")[1] || "");
+    if (request.method() === "GET") {
+      await route.fulfill({
+        body: "<h1>Private preview</h1>",
+        headers: { ...headers, "content-type": "text/html; charset=utf-8" },
+      });
+      return;
+    }
+    const body = request.postDataBuffer();
+    mutations.push({
+      method: request.method(),
+      path,
+      bodyLength: body?.byteLength ?? 0,
+    });
+    if (request.method() === "POST" && path === "upload-error.html") {
+      await route.fulfill({
+        status: 411,
+        json: { success: false, error: "CONTENT_LENGTH_REQUIRED" },
+        headers,
+      });
+      return;
+    }
+    if (request.method() === "POST" && path === "new.html")
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    if (request.method() === "DELETE") {
+      entries = entries.filter((entry) => entry.path !== path);
+      await route.fulfill({
+        json: { success: true, deleted: path },
+        headers,
+      });
+      return;
+    }
+    const uploaded = {
+      path,
+      size: body?.byteLength ?? 0,
+      content_type: "text/html; charset=utf-8",
+      updated_at: "2026-10-29T12:30:00.000Z",
+    };
+    const index = entries.findIndex((entry) => entry.path === path);
+    if (request.method() === "PUT") {
+      if (index >= 0) entries[index] = uploaded;
+    } else {
+      entries.push(uploaded);
+    }
+    await route.fulfill({
+      status: request.method() === "PUT" ? 200 : 201,
+      json: { success: true, file: { path, size: uploaded.size, content_type: uploaded.content_type } },
+      headers,
+    });
+  });
+  await page.route("**/v1/projects/project-files/storage", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        storage: {
+          bytes_used: entries.reduce((sum, entry) => sum + entry.size, 0),
+          file_count: entries.length,
+          file_count_limit: 10_000,
+          quota_bytes: 1024 * 1024 * 1024,
+          percent_used: 0,
+        },
+      },
+    }),
+  );
+
+  await page.goto("/dashboard/sites");
+  await page.getByRole("link", { name: "Manage", exact: true }).click();
+  await page
+    .locator(".tabs")
+    .getByRole("link", { name: "Files", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: "index.html", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Storage usage")).toContainText("3 / 10,000 files");
+  await page.getByRole("button", { name: "Preview index.html" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Private preview");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Open folder assets" }).click();
+  await expect(page.getByRole("button", { name: "site.css", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Root", exact: true }).click();
+  await page.getByRole("button", { name: "Load more files" }).click();
+  await expect(page.getByRole("button", { name: "Open folder archive" })).toBeVisible();
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "new.html",
+    mimeType: "text/html",
+    buffer: Buffer.from("<h1>New</h1>"),
+  });
+  await expect(page.getByRole("status")).toContainText("Uploading new.html");
+  await page.getByRole("button", { name: "Load more files" }).click();
+  await expect(page.getByRole("button", { name: "new.html", exact: true })).toBeVisible();
+  expect(mutations[0]).toMatchObject({
+    method: "POST",
+    path: "new.html",
+    bodyLength: Buffer.byteLength("<h1>New</h1>"),
+  });
+
+  await page.getByRole("button", { name: "Replace index.html" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "replacement.html",
+    mimeType: "text/html",
+    buffer: Buffer.from("<h1>Updated</h1>"),
+  });
+  await expect(page.getByText("File replaced.", { exact: false })).toBeVisible();
+  expect(mutations[1]).toMatchObject({
+    method: "PUT",
+    path: "index.html",
+    bodyLength: Buffer.byteLength("<h1>Updated</h1>"),
+  });
+
+  await page.getByRole("button", { name: "Load more files" }).click();
+  await page.getByRole("button", { name: "Delete new.html" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Delete new.html?");
+  await page.getByRole("button", { name: "Delete file", exact: true }).click();
+  await page.getByRole("button", { name: "Load more files" }).click();
+  await expect(page.getByRole("button", { name: "new.html", exact: true })).toHaveCount(0);
+  expect(mutations[2]).toMatchObject({
+    method: "DELETE",
+    path: "new.html",
+  });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "upload-error.html",
+    mimeType: "text/html",
+    buffer: Buffer.from("<h1>Retry</h1>"),
+  });
+  await expect(page.getByRole("alert")).toContainText(
+    "browser cannot set Content-Length manually",
+  );
+  await page.locator(".dropzone").evaluate((dropzone) => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File(["<h1>Dropped</h1>"], "dragged.html", { type: "text/html" }),
+    );
+    dropzone.dispatchEvent(
+      new DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: data,
+      }),
+    );
+  });
+  await expect(page.getByRole("alert")).toContainText("Upload complete");
+  expect(mutations[4]).toMatchObject({
+    method: "POST",
+    path: "dragged.html",
+  });
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
+
+test("Chromium supplies Content-Length for a browser-native File upload", async ({
+  page,
+}) => {
+  let receivedLength: string | undefined;
+  let receivedBytes = 0;
+  const server = createServer((request, response) => {
+    const origin = request.headers.origin || "";
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Access-Control-Allow-Credentials", "true");
+    response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    response.setHeader("Access-Control-Allow-Headers", "content-type");
+    response.setHeader("Vary", "Origin");
+    if (request.method === "OPTIONS") {
+      response.writeHead(204).end();
+      return;
+    }
+    receivedLength = request.headers["content-length"];
+    request.on("data", (chunk: Buffer) => {
+      receivedBytes += chunk.byteLength;
+    });
+    request.on("end", () => {
+      response.writeHead(201, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ success: true }));
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("The browser upload test server did not start.");
+    await page.goto("/login");
+    const expectedBytes = Buffer.byteLength("<h1>Browser upload</h1>");
+    const result = await page.evaluate(async (url) => {
+      const file = new File(["<h1>Browser upload</h1>"], "browser.html", {
+        type: "text/html",
+      });
+      return await new Promise<{ status: number; progress: number }>(
+        (resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.open("POST", url);
+          request.withCredentials = true;
+          let progress = 0;
+          request.upload.onprogress = (event) => {
+            if (event.lengthComputable)
+              progress = Math.round((event.loaded / event.total) * 100);
+          };
+          request.onload = () => resolve({ status: request.status, progress });
+          request.onerror = () => reject(new Error("XHR upload failed"));
+          request.send(file);
+        },
+      );
+    }, `http://127.0.0.1:${address.port}/upload`);
+    expect(result.status).toBe(201);
+    expect(result.progress).toBe(100);
+    expect(receivedLength).toBe(String(expectedBytes));
+    expect(receivedBytes).toBe(expectedBytes);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("file API errors are visible and expired file sessions return to login", async ({
+  page,
+}) => {
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { user: account } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({
+      json: {
+        projects: [
+          {
+            id: "project-error",
+            name: "Error Website",
+            slug: "error-website",
+            status: "inactive",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/v1/projects/project-error/files?*", (route) =>
+    route.fulfill({
+      status: 403,
+      json: { success: false, error: "FORBIDDEN" },
+    }),
+  );
+  await page.route("**/v1/projects/project-error/storage", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        storage: {
+          bytes_used: 0,
+          file_count: 0,
+          file_count_limit: 10_000,
+          quota_bytes: 1024 * 1024 * 1024,
+          percent_used: 0,
+        },
+      },
+    }),
+  );
+  await page.goto("/dashboard/sites");
+  await page.getByRole("link", { name: "Manage", exact: true }).click();
+  await page
+    .locator(".tabs")
+    .getByRole("link", { name: "Files", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("permission");
+
+  await page.unroute("**/v1/projects/project-error/files?*");
+  await page.route("**/v1/projects/project-error/files?*", (route) =>
+    route.fulfill({
+      status: 401,
+      json: { success: false, error: "UNAUTHORIZED" },
+    }),
+  );
+  await page.getByRole("button", { name: "Refresh file list" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByLabel("Email address")).toBeVisible();
 });
 
 test("authenticated dashboard shows an empty state for no projects", async ({

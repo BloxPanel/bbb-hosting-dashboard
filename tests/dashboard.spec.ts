@@ -67,6 +67,17 @@ test("every site route, file upload and demo billing isolation", async ({
     .locator(".tabs")
     .getByRole("link", { name: "Files", exact: true })
     .click();
+  await expect(
+    page.getByRole("button", { name: "Open folder assets" }),
+  ).toHaveCount(1);
+  const demoFileApiRequests: string[] = [];
+  await page.route(
+    "https://api.builtbybuzz.dev/v1/projects/**/files**",
+    async (route) => {
+      demoFileApiRequests.push(route.request().url());
+      await route.fulfill({ status: 500, json: { success: false } });
+    },
+  );
   await page.locator("input[type=file]").setInputFiles({
     name: "hello.txt",
     mimeType: "text/plain",
@@ -75,6 +86,12 @@ test("every site route, file upload and demo billing isolation", async ({
   await expect(
     page.getByRole("button", { name: "hello.txt", exact: true }),
   ).toBeVisible();
+  expect(demoFileApiRequests).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   await page.getByRole("button", { name: "Preview hello.txt" }).click();
   await expect(page.getByRole("dialog")).toContainText("Demo file contents");
   await page.keyboard.press("Escape");

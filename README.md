@@ -27,15 +27,15 @@ npx playwright install --with-deps chromium
 npm run test:e2e
 ```
 
-The browser suite starts and stops its own development and production-preview servers. It exercises desktop/mobile routes, local website CRUD, file upload and preview, billing isolation, responsive overflow, drawer keyboard behavior, and production demo rejection (including a production build with the demo flag set).
+The browser suite starts and stops its own development and production-preview servers. It exercises desktop/mobile routes, local website CRUD, authenticated file listing/upload/replacement/deletion and previews, file API errors/session expiry, browser `Content-Length` behavior, demo isolation, billing isolation, responsive overflow, and production demo rejection.
 
-Production builds disable demo authentication regardless of `VITE_DEMO_MODE`. Production uses the BBB API cookie session for registration, login, verification and recovery. Website, file, deployment and billing operations remain disabled until their separate contracts are connected. See [the integration contract](docs/API_INTEGRATION.md).
+Production builds disable demo authentication regardless of `VITE_DEMO_MODE`. Production uses the BBB API cookie session for registration, login, verification and recovery. Project file listing, upload, replacement, deletion, download and storage usage use the authenticated project-file API. Deployment and billing operations remain subject to their separate integration contracts. See [the integration contract](docs/API_INTEGRATION.md).
 
 ## Included pages
 
 `/login`, `/register` (`/signup` alias), `/verify-email`, `/forgot-password`, `/reset-password`, `/dashboard`, `/dashboard/sites`, and `/dashboard/sites/:siteId` with `files`, `domains`, `deployments`, `billing`, and `settings` subroutes. Account billing, account settings and support are under `/dashboard/billing`, `/dashboard/account`, and `/dashboard/support`. Protected routes require a session; a production build cannot enter through demo login.
 
-The file manager supports directory navigation, local upload/drop/progress, text/image previews, download, rename and confirmed recursive deletion. Website management supports search, publication/billing filters, local draft creation, rename and confirmed deletion with active subscription warnings.
+The file manager supports paginated project listings, nested-directory navigation, raw file upload/drop with progress, supported text/image previews, download, replacement and confirmed file deletion. It displays the backend storage quota and file count, validates supported extensions and path segments, and clearly distinguishes stored files from publishing/deployment. Demo uploads remain local and never call file mutation APIs.
 
 **One paid annual subscription = one hosted website.** Billing status, publication status and entitlement are separate types. Active annual base cost is $10 multiplied by active site subscriptions. Domain aliases do not add projects. Owner grants must come from the backend.
 

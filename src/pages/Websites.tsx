@@ -320,11 +320,9 @@ export function SiteTable({ recent = false }: { recent?: boolean }) {
                 <th>{DEMO ? "PUBLICATION" : "HOSTING STATUS"}</th>
                 {DEMO && <th>HOSTING BILLING</th>}
                 <th>{DEMO ? "LAST UPDATED" : "CREATED"}</th>
-                {DEMO && (
-                  <th>
-                    <span className="sr-only">Manage</span>
-                  </th>
-                )}
+                <th>
+                  <span className="sr-only">Manage</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -332,33 +330,24 @@ export function SiteTable({ recent = false }: { recent?: boolean }) {
                 <tr key={site.id}>
                   <td>
                     <div className="website-cell">
-                      {DEMO ? (
-                        <Link
-                          to={`/dashboard/sites/${site.id}`}
-                          className="website-name"
-                        >
+                      <Link
+                        to={`/dashboard/sites/${site.id}`}
+                        className="website-name"
+                      >
                           <div className={`site-icon color-${i % 4}`}>
                             <Globe2 size={21} />
                           </div>
                           <div>
                             <strong>{site.name}</strong>
                             <small>
-                              {site.url
+                              {DEMO && site.url
                                 ? site.url.replace("https://", "")
-                                : "No address assigned"}
+                                : DEMO
+                                  ? "No address assigned"
+                                  : site.slug + ".builtbybuzz.dev"}
                             </small>
                           </div>
-                        </Link>
-                      ) : (
-                        <div className="website-name">
-                          <div className={`site-icon color-${i % 4}`}>
-                            <Globe2 size={21} />
-                          </div>
-                          <div>
-                            <strong>{site.name}</strong>
-                          </div>
-                        </div>
-                      )}
+                      </Link>
                       {!DEMO && (
                         <a
                           className="project-url"
@@ -366,7 +355,7 @@ export function SiteTable({ recent = false }: { recent?: boolean }) {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {site.slug}.builtbybuzz.dev
+                          Open website <ArrowUpRight size={13} />
                         </a>
                       )}
                     </div>
@@ -391,16 +380,14 @@ export function SiteTable({ recent = false }: { recent?: boolean }) {
                     </td>
                   )}
                   <td className="muted date">{site.createdAt || "—"}</td>
-                  {DEMO && (
-                    <td>
-                      <Link
-                        className="manage"
-                        to={`/dashboard/sites/${site.id}`}
-                      >
-                        Manage <ArrowUpRight size={15} />
-                      </Link>
-                    </td>
-                  )}
+                  <td>
+                    <Link
+                      className="manage"
+                      to={`/dashboard/sites/${site.id}`}
+                    >
+                      Manage <ArrowUpRight size={15} />
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
