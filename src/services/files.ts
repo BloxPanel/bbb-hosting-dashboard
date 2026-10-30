@@ -133,7 +133,9 @@ function parseFile(value: unknown, projectId: string): HostedFile {
   if (typeof path !== "string") {
     problems.push("path: expected string");
   } else if (!validPath(path)) {
-    problems.push("path: failed validation");
+    problems.push(
+      `path: failed validation (${JSON.stringify(path)})`
+    );
   }
 
   if (
