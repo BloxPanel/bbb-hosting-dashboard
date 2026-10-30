@@ -156,7 +156,7 @@ function parseFile(value: unknown, projectId: string): HostedFile {
 
   if (problems.length > 0) {
     throw new Error(
-      `The API returned invalid file metadata: ${problems.join("; ")}.`,
+      `The API returned a file with invalid metadata: ${problems.join("; ")}.`,
     );
   }
 
