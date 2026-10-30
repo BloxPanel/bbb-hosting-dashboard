@@ -77,11 +77,14 @@ function validPath(path: string): boolean {
     path.includes("%") ||
     Array.from(path).some(
       (character) =>
-        character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127,
+        character.charCodeAt(0) <= 31 ||
+        character.charCodeAt(0) === 127,
     ) ||
     path.normalize("NFC") !== path
-  )
+  ) {
     return false;
+  }
+
   return path.split("/").every(
     (segment) =>
       segment.length > 0 &&
@@ -95,40 +98,89 @@ function validPath(path: string): boolean {
 }
 
 export function validateFilePath(path: string): string | null {
-  if (!validPath(path)) return "Use a simple file path without hidden, reserved, or special segments.";
+  if (!validPath(path)) {
+    return "Use a simple file path without hidden, reserved, or special segments.";
+  }
+
   const filename = path.slice(path.lastIndexOf("/") + 1);
   const extension = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
-  if (!CONTENT_TYPES[extension])
+
+  if (!CONTENT_TYPES[extension]) {
     return "This file type is not supported. Choose an allowed website file type.";
+  }
+
   return null;
 }
 
+/**
+ * Convert a backend file record into a HostedFile.
+ *
+ * Validates individual fields and provides diagnostic errors without
+ * exposing complete API responses or sensitive metadata.
+ */
 function parseFile(value: unknown, projectId: string): HostedFile {
-  if (!isRecord(value))
+  if (!isRecord(value)) {
     throw new Error("The API returned an unexpected file record.");
+  }
+
   const path = value.path;
   const size = value.size;
   const contentType = value.content_type;
   const updatedAt = value.updated_at;
+
+  const problems: string[] = [];
+
+  if (typeof path !== "string") {
+    problems.push("path: expected string");
+  } else if (!validPath(path)) {
+    problems.push("path: failed validation");
+  }
+
+  if (
+    typeof size !== "number" ||
+    !Number.isSafeInteger(size) ||
+    size < 0
+  ) {
+    problems.push("size: expected non-negative integer");
+  }
+
+  if (!(typeof contentType === "string" || contentType === null)) {
+    problems.push("content_type: expected string or null");
+  }
+
+  if (typeof updatedAt !== "string") {
+    problems.push("updated_at: expected date string");
+  } else if (Number.isNaN(Date.parse(updatedAt))) {
+    problems.push("updated_at: invalid date");
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `The API returned invalid file metadata: ${problems.join("; ")}.`,
+    );
+  }
+
+  // Explicit type narrowing for TypeScript.
+  // The diagnostic array above cannot establish these types.
   if (
     typeof path !== "string" ||
-    !validPath(path) ||
-    !Number.isSafeInteger(size) ||
-    (size as number) < 0 ||
+    typeof size !== "number" ||
     !(typeof contentType === "string" || contentType === null) ||
-    typeof updatedAt !== "string" ||
-    Number.isNaN(Date.parse(updatedAt))
-  )
-    throw new Error("The API returned a file with invalid metadata.");
+    typeof updatedAt !== "string"
+  ) {
+    throw new Error("The API returned unexpected file metadata types.");
+  }
+
   const slash = path.lastIndexOf("/");
+
   return {
     id: path,
     siteId: projectId,
     name: path.slice(slash + 1),
     path: slash < 0 ? "/" : `/${path.slice(0, slash + 1)}`,
-    size: size as number,
+    size,
     kind: "file",
-    mime: contentType || "",
+    mime: contentType ?? "",
     modified: updatedAt,
   };
 }
@@ -142,8 +194,10 @@ export function parseFilePage(
     payload.success !== true ||
     !Array.isArray(payload.files) ||
     !(payload.next_cursor === null || typeof payload.next_cursor === "string")
-  )
+  ) {
     throw new Error("The API returned an unexpected file listing.");
+  }
+
   return {
     files: payload.files.map((file) => parseFile(file, projectId)),
     nextCursor: payload.next_cursor,
@@ -151,10 +205,22 @@ export function parseFilePage(
 }
 
 export function parseStorage(payload: unknown): ProjectStorage {
-  if (!isRecord(payload) || payload.success !== true || !isRecord(payload.storage))
+  if (
+    !isRecord(payload) ||
+    payload.success !== true ||
+    !isRecord(payload.storage)
+  ) {
     throw new Error("The API returned an unexpected storage response.");
-  const { bytes_used, file_count, file_count_limit, quota_bytes, percent_used } =
-    payload.storage;
+  }
+
+  const {
+    bytes_used,
+    file_count,
+    file_count_limit,
+    quota_bytes,
+    percent_used,
+  } = payload.storage;
+
   if (
     !Number.isSafeInteger(bytes_used) ||
     !Number.isSafeInteger(file_count) ||
@@ -166,8 +232,10 @@ export function parseStorage(payload: unknown): ProjectStorage {
     (file_count_limit as number) <= 0 ||
     (quota_bytes as number) <= 0 ||
     percent_used < 0
-  )
+  ) {
     throw new Error("The API returned invalid storage usage.");
+  }
+
   return {
     bytesUsed: bytes_used as number,
     fileCount: file_count as number,
@@ -189,25 +257,39 @@ function validateUploadResponse(
     payload.file.path !== path ||
     payload.file.size !== size ||
     typeof payload.file.content_type !== "string"
-  )
+  ) {
     throw new Error("The API returned an unexpected upload response.");
+  }
 }
 
-function validateDeleteResponse(payload: unknown, path: string): void {
-  if (!isRecord(payload) || payload.success !== true || payload.deleted !== path)
+function validateDeleteResponse(
+  payload: unknown,
+  path: string,
+): void {
+  if (
+    !isRecord(payload) ||
+    payload.success !== true ||
+    payload.deleted !== path
+  ) {
     throw new Error("The API returned an unexpected delete response.");
+  }
 }
 
 export const files = {
-  list: async (projectId: string, cursor: string | null = null) => {
+  list: async (
+    projectId: string,
+    cursor: string | null = null,
+  ): Promise<ProjectFilePage> => {
     const payload = await api<unknown>(
       "files.list",
       { headers: { Accept: "application/json" } },
       [projectId, "100", cursor || ""],
     );
+
     return parseFilePage(payload, projectId);
   },
-  storage: async (projectId: string) =>
+
+  storage: async (projectId: string): Promise<ProjectStorage> =>
     parseStorage(
       await api<unknown>(
         "files.storage",
@@ -215,42 +297,54 @@ export const files = {
         [projectId],
       ),
     ),
+
   upload: async (
     projectId: string,
     file: File,
     path: string,
     onProgress: (progress: number) => void,
-  ) => {
+  ): Promise<void> => {
     const result = await apiUpload(
       "files.upload",
       [projectId, path],
       file,
       onProgress,
     );
+
     validateUploadResponse(result, path, file.size);
   },
+
   replace: async (
     projectId: string,
     file: File,
     path: string,
     onProgress: (progress: number) => void,
-  ) => {
+  ): Promise<void> => {
     const result = await apiUpload(
       "files.replace",
       [projectId, path],
       file,
       onProgress,
     );
+
     validateUploadResponse(result, path, file.size);
   },
-  remove: async (projectId: string, path: string) => {
+
+  remove: async (
+    projectId: string,
+    path: string,
+  ): Promise<void> => {
     const result = await api<unknown>(
       "files.delete",
       { method: "DELETE" },
       [projectId, path],
     );
+
     validateDeleteResponse(result, path);
   },
-  download: (projectId: string, path: string) =>
-    apiBlob("files.download", [projectId, path]),
+
+  download: (
+    projectId: string,
+    path: string,
+  ) => apiBlob("files.download", [projectId, path]),
 };
