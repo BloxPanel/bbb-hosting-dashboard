@@ -1,4 +1,4 @@
-import { ApiError, api } from "./api";
+import { api } from "./api";
 import type { HostedProject } from "../types";
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -111,15 +111,8 @@ export function parseProjects(payload: unknown): HostedProject[] {
 
 export const projects = {
   list: async () => parseProjects(await api<unknown>("projects.list")),
-  create: async (name: string, slug: string) => {
-    try {
-      return await api<unknown>("projects.create", {
-        body: JSON.stringify({ name, slug }),
-      });
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409)
-        throw new Error("That subdomain is already in use. Try another one.");
-      throw error;
-    }
-  },
+  create: async (name: string, slug: string) =>
+    api<unknown>("projects.create", {
+      body: JSON.stringify({ name, slug }),
+    }),
 };

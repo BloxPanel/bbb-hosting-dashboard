@@ -1143,7 +1143,114 @@ progress {
   accent-color: #e6af45;
   margin-top: 10px;
 }
+.bbb-error-display {
+  border: 1px solid #473a2d;
+  background: linear-gradient(180deg, rgba(28, 27, 21, 0.9), rgba(20, 26, 34, 0.95));
+  border-radius: 12px;
+  padding: 22px;
+  color: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(230, 175, 69, 0.12);
+}
+.bbb-error-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.bbb-error-kicker {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #d7a94e;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.bbb-error-message {
+  font-size: 14px;
+  color: #f1dca2;
+  margin: 0 0 18px;
+}
+.bbb-error-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.bbb-error-grid div {
+  border: 1px solid #2d3749;
+  background: rgba(8, 12, 20, 0.42);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.bbb-error-grid dt {
+  color: #8ea2bb;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+}
+.bbb-error-grid dd {
+  margin: 0;
+  color: #ebf1f7;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.bbb-error-reason {
+  margin: 0 0 18px;
+  color: #d9e4f3;
+  font-size: 12px;
+}
+.bbb-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.bbb-error-button {
+  background: #1b2432;
+  border: 1px solid #425067;
+  border-radius: 8px;
+  color: #ebf2fa;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.bbb-error-button:hover {
+  border-color: #4cbbd5;
+}
+.bbb-error-button.primary {
+  background: #e6af45;
+  border-color: #f1c765;
+  color: #1f150d;
+}
+.bbb-error-copy-fallback {
+  margin-top: 16px;
+}
+.bbb-error-copy-fallback p {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.bbb-error-copy-fallback label {
+  margin: 0 0 6px;
+  font-size: 11px;
+}
+.bbb-error-copy-fallback textarea {
+  width: 100%;
+  min-height: 170px;
+  resize: vertical;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
 @media (max-width: 700px) {
+  .bbb-error-display {
+    padding: 16px;
+    overflow-wrap: anywhere;
+  }
+  .bbb-error-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bbb-error-actions > button {
+    flex: 1 1 100%;
+  }
   .dropzone {
     padding: 26px 16px;
   }

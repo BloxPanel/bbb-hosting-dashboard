@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { useApp } from "../app/state";
-import { DEMO } from "../services/api";
+import { ApiError, DEMO } from "../services/api";
 import ApiConnectivity from "../components/ApiConnectivity";
+import { ErrorDisplay } from "../components/ErrorDisplay";
 import { auth, passwordError, safeDestination } from "../services/auth";
 import { useRef } from "react";
 type Mode = "login" | "register" | "forgot" | "verify" | "reset";
@@ -89,7 +90,7 @@ export default function Login({
 }
 
 function AuthForm({ mode }: { mode: Mode }) {
-  const { setUser, notice, loading } = useApp();
+  const { setUser, notice, loading, authError, setAuthError } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const [token, setToken] = useState(() => takeLinkToken());
@@ -99,6 +100,7 @@ function AuthForm({ mode }: { mode: Mode }) {
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
   const [error, setError] = useState("");
+  const [apiFailure, setApiFailure] = useState<unknown | null>(null);
   const [success, setSuccess] = useState("");
   const isToken = mode === "verify" || mode === "reset";
   const newPassword = mode === "register" || mode === "reset";
@@ -112,6 +114,25 @@ function AuthForm({ mode }: { mode: Mode }) {
   return (
     <>
       {notice && <p role="alert">{notice}</p>}
+      {authError !== null && (
+        <ErrorDisplay
+          error={authError}
+          context={{
+            component: "Authentication",
+            operation: "auth.session",
+            reason: "Request failed",
+            retryable: true,
+          }}
+          onRetry={async () => {
+            setAuthError(null);
+            try {
+              setUser(await auth.session());
+            } catch (requestError) {
+              setAuthError(requestError);
+            }
+          }}
+        />
+      )}
       {mode !== "login" && <h3>{titles[mode]}</h3>}
       {success ? (
         <p role="status">{success}</p>
@@ -137,9 +158,11 @@ function AuthForm({ mode }: { mode: Mode }) {
             busy.current = true;
             setPending(true);
             setError("");
+            setApiFailure(null);
             try {
               if (mode === "login") {
                 setUser(await auth.login(email, password));
+                setAuthError(null);
                 navigate(safeDestination(location.state?.from), {
                   replace: true,
                 });
@@ -171,9 +194,14 @@ function AuthForm({ mode }: { mode: Mode }) {
               if (mode !== "login" && event.target instanceof HTMLFormElement)
                 event.target.reset();
             } catch (cause) {
-              setError(
-                cause instanceof Error ? cause.message : "Please try again.",
-              );
+              if (
+                cause instanceof ApiError &&
+                [1004, 4001, 4002, 4003].includes(cause.bbbCode)
+              ) {
+                setError(cause.message);
+              } else {
+                setApiFailure(cause);
+              }
             } finally {
               busy.current = false;
               setPending(false);
@@ -226,6 +254,17 @@ function AuthForm({ mode }: { mode: Mode }) {
             </p>
           )}
           {error && <p role="alert">{error}</p>}
+          {apiFailure !== null && (
+            <ErrorDisplay
+              error={apiFailure}
+              context={{
+                component: "Authentication",
+                operation: "Account Request",
+                reason: "Request failed",
+                retryable: false,
+              }}
+            />
+          )}
           <button
             className="primary full"
             disabled={

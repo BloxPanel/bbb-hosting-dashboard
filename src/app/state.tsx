@@ -20,13 +20,14 @@ const Context = createContext<ReturnType<typeof useAppState> | null>(null);
 function useAppState() {
   const [user, setUser] = useState<UserAccount | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<unknown | null>(null);
   const [sites, setSites] = useState<HostedWebsite[]>(() =>
     DEMO ? initialSites() : [],
   );
   const [projects, setProjects] = useState<HostedProject[]>([]);
   const [projectsOwnerId, setProjectsOwnerId] = useState<string | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(false);
-  const [projectsError, setProjectsError] = useState("");
+  const [projectsError, setProjectsError] = useState<unknown | null>(null);
   const [projectRefresh, setProjectRefresh] = useState(0);
   const [notice, setNotice] = useState("");
   const [siteFiles, setSiteFiles] = useState<Record<string, HostedFile[]>>({});
@@ -38,7 +39,7 @@ function useAppState() {
     setProjectsOwnerId(null);
     setSiteFiles({});
     setSiteDomains({});
-    setProjectsError("");
+    setProjectsError(null);
     if (!userId) {
       setProjectsLoading(false);
       return;
@@ -56,11 +57,7 @@ function useAppState() {
       })
       .catch((error: unknown) => {
         if (active)
-          setProjectsError(
-            error instanceof Error
-              ? error.message
-              : "Could not load your websites. Please try again.",
-          );
+          setProjectsError(error);
       })
       .finally(() => {
         if (active) setProjectsLoading(false);
@@ -96,7 +93,7 @@ function useAppState() {
         if (active) {
           setUser(null);
           if (!(error instanceof ApiError && error.status === 401))
-            setNotice(error.message);
+            setAuthError(error);
         }
       })
       .finally(() => {
@@ -110,6 +107,8 @@ function useAppState() {
     user,
     setUser,
     loading,
+    authError,
+    setAuthError,
     sites,
     setSites,
     projects: !DEMO && projectsOwnerId === user?.id ? projects : [],

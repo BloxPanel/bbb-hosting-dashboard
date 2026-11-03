@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Activity } from "lucide-react";
 import { resolveApiBaseUrl } from "../services/api";
 import { connectivity } from "../services/connectivity";
+import { ErrorDisplay } from "./ErrorDisplay";
 export default function ApiConnectivity() {
   const [result, setResult] = useState<{ kind: string; data: unknown } | null>(
     null,
   );
-  const [error, setError] = useState(() => {
+  const [configurationError] = useState(() => {
     try {
       resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
       return "";
@@ -14,15 +15,18 @@ export default function ApiConnectivity() {
       return (e as Error).message;
     }
   });
+  const [error, setError] = useState<unknown | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failedKind, setFailedKind] = useState<"health" | "projectCount">("health");
   async function check(kind: "health" | "projectCount") {
     setBusy(true);
-    setError("");
+    setError(null);
+    setFailedKind(kind);
     setResult(null);
     try {
       setResult({ kind, data: await connectivity[kind]() });
     } catch (e) {
-      setError((e as Error).message);
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -58,7 +62,19 @@ export default function ApiConnectivity() {
         )}
       </div>
       {busy && <p role="status">Contacting the API…</p>}
-      {error && <p role="alert">{error}</p>}
+      {configurationError && <p role="alert">{configurationError}</p>}
+      {error !== null && (
+        <ErrorDisplay
+          error={error}
+          context={{
+            component: "API Connectivity",
+            operation: failedKind === "health" ? "Check API Health" : "Read Project Count",
+            reason: "Request failed",
+            retryable: true,
+          }}
+          onRetry={() => check(failedKind)}
+        />
+      )}
       {result && (
         <div role="status">
           <p>

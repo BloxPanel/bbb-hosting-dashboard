@@ -87,7 +87,7 @@ describe("project file API contracts", () => {
 
   it("rejects malformed or fabricated API success shapes", () => {
     expect(() => parseFilePage({ files: [] }, "project_1")).toThrow(
-      /unexpected file listing/,
+      /files could not be loaded/,
     );
     expect(() =>
       parseFilePage(
@@ -105,9 +105,42 @@ describe("project file API contracts", () => {
         },
         "project_1",
       ),
-    ).toThrow(/invalid metadata/);
+    ).toThrow(/unexpected file information/);
     expect(() => parseStorage({ success: true, storage: {} })).toThrow(
-      /invalid storage usage/,
+      /unexpected response/,
+    );
+  });
+  it("reports invalid file metadata without including the customer path", () => {
+    let failure: unknown;
+    try {
+      parseFilePage(
+        {
+          success: true,
+          files: [
+            {
+              path: "customer-private/../secret.html",
+              size: 1,
+              content_type: "text/html",
+              updated_at: "2026-10-29",
+            },
+          ],
+          next_cursor: null,
+        },
+        "project_1",
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      identifier: "INVALID_FILE_METADATA",
+      code: 2001,
+      field: "path",
+      reason: "Failed validation",
+    });
+    expect((failure as Error).message).not.toContain("customer-private");
+    expect((failure as Error & { report: string }).report).not.toContain(
+      "secret.html",
     );
   });
 });

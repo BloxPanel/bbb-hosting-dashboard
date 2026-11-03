@@ -15,6 +15,7 @@ import {
 import { useApp } from "../app/state";
 import { Badge, EmptyState, Modal, PageHeading } from "../components/ui";
 import { ApiError, DEMO } from "../services/api";
+import { ErrorDisplay } from "../components/ErrorDisplay";
 import {
   projects as projectApi,
   validateProjectName,
@@ -43,6 +44,7 @@ export function CreateWebsite() {
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [error, setError] = useState("");
+  const [apiFailure, setApiFailure] = useState<unknown | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const { setSites, setNotice, reloadProjects } = useApp();
@@ -51,6 +53,7 @@ export function CreateWebsite() {
     setSlug("");
     setSlugEdited(false);
     setError("");
+    setApiFailure(null);
     setOpen(true);
   };
   const closeForm = () => {
@@ -69,6 +72,7 @@ export function CreateWebsite() {
     }
 
     setError("");
+    setApiFailure(null);
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -101,13 +105,14 @@ export function CreateWebsite() {
       }
       setOpen(false);
     } catch (requestError) {
-      setError(
-        requestError instanceof ApiError
-          ? requestError.message
-          : requestError instanceof Error
-            ? requestError.message
-            : "Could not create your website. Please try again.",
-      );
+      if (
+        requestError instanceof ApiError &&
+        [1004, 3001, 3002, 3003].includes(requestError.bbbCode)
+      ) {
+        setError(requestError.message);
+      } else {
+        setApiFailure(requestError);
+      }
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -185,10 +190,24 @@ export function CreateWebsite() {
                 </strong>
               </small>
             </label>
-            {error && (
+            {error && !apiFailure && (
               <p className="form-error" role="alert">
                 {error}
               </p>
+            )}
+            {apiFailure !== null && (
+              <ErrorDisplay
+                error={apiFailure}
+                context={{
+                  identifier: apiFailure instanceof ApiError
+                    ? undefined
+                    : "UNKNOWN_ERROR",
+                  component: "Websites",
+                  operation: "Create Website",
+                  reason: "Request failed",
+                  retryable: false,
+                }}
+              />
             )}
             <div className="modal-actions">
               <button
@@ -304,12 +323,22 @@ export function SiteTable({ recent = false }: { recent?: boolean }) {
         <p className="projects-message" role="status">
           Loading your websites…
         </p>
-      ) : projectsError ? (
-        <div className="projects-message" role="alert">
-          <p>{projectsError}</p>
-          <button className="secondary" onClick={reloadProjects}>
-            Try again
-          </button>
+      ) : projectsError !== null ? (
+        <div className="projects-message">
+          <ErrorDisplay
+            error={projectsError}
+            context={{
+              identifier: projectsError instanceof ApiError
+                ? undefined
+                : "INVALID_API_RESPONSE",
+              component: "Websites",
+              operation: "Load Websites",
+              reason: "Unexpected response shape",
+              retryable: true,
+            }}
+            onRetry={reloadProjects}
+            retryLabel="Try again"
+          />
         </div>
       ) : visible.length ? (
         <div className="table-scroll">

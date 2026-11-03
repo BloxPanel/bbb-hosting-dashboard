@@ -1,3 +1,13 @@
+import {
+  formatErrorReport,
+  createDiagnosticError,
+  normalizeError,
+  parseBackendError,
+  type NormalizedError,
+} from "./errors";
+
+export * from "./errors";
+
 export const demoEnabled = (development: boolean, value: string | undefined) =>
   development && value === "true";
 export const DEMO = demoEnabled(
@@ -175,73 +185,199 @@ export class IntegrationUnavailable extends Error {
   }
 }
 export class ApiError extends Error {
+  public readonly bbbCode: number;
+  public readonly identifier: string;
+  public readonly httpStatus?: number;
+  public readonly operation?: string;
+  public readonly component?: string;
+  public readonly reason?: string;
+  public readonly field?: string;
+  public readonly timestamp: string;
+  public readonly reference: string;
+  public readonly retryable: boolean;
+
   constructor(
     public status: number,
     public code: string,
+    details: Partial<NormalizedError> & {
+      backendCode?: number;
+      safeMessage?: string;
+      identifier?: string;
+    } = {},
   ) {
-    const codeMessages: Record<string, string> = {
-      INVALID_INPUT: "Please check the information you entered.",
-      INVALID_TOKEN:
-        "This link is invalid, expired, or already used. Request a new link.",
-      INVALID_CREDENTIALS: "Email or password is incorrect.",
-      UNAUTHORIZED: "Your session has expired. Please sign in again.",
-      ORIGIN_DENIED: "This action is not allowed from this dashboard address.",
-      RATE_LIMITED: "Too many attempts. Please wait before trying again.",
-      AUTH_UNAVAILABLE:
-        "Authentication is temporarily unavailable. Please try again later.",
-      INVALID_PATH:
-        "That file path is not allowed. Use a simple name and supported folder path.",
-      UNSUPPORTED_FILE_TYPE:
-        "This file type is not supported. Choose an allowed website file type.",
-      CONTENT_LENGTH_REQUIRED:
-        "The API rejected this upload because it did not receive a file size. The browser cannot set Content-Length manually; please try another supported browser or contact support.",
-      INVALID_UPLOAD:
-        "The API could not verify the complete file upload. Please try uploading the file again.",
-      FILE_TOO_LARGE: "Files must be 25 MiB or smaller.",
-      STORAGE_LIMIT_EXCEEDED:
-        "This upload would exceed the website's 1 GiB storage limit.",
-      FILE_COUNT_LIMIT_EXCEEDED:
-        "This website has reached its 10,000-file limit.",
-      FILE_ALREADY_EXISTS:
-        "A file with that name already exists. Choose Replace to overwrite it.",
-      FILE_NOT_FOUND: "That file no longer exists. Refresh the file list.",
-      PROJECT_BUSY: "Another file change is in progress. Please try again.",
-      EMAIL_VERIFICATION_REQUIRED:
-        "Please verify your email address before continuing.",
-      EMAIL_NOT_VERIFIED:
-        "Please verify your email address before creating a website.",
-      EMAIL_UNVERIFIED:
-        "Please verify your email address before creating a website.",
-      DUPLICATE_SLUG: "That subdomain is already in use. Try another one.",
-      DUPLICATE_SUBDOMAIN:
-        "That subdomain is already in use. Try another one.",
-      RESERVED_SLUG: "That subdomain is reserved. Choose a different one.",
-      RESERVED_SUBDOMAIN:
-        "That subdomain is reserved. Choose a different one.",
-      SLUG_TAKEN: "That subdomain is already in use. Try another one.",
-      SLUG_ALREADY_EXISTS:
-        "That subdomain is already in use. Try another one.",
-      SUBDOMAIN_TAKEN: "That subdomain is already in use. Try another one.",
-      PROJECT_SLUG_TAKEN:
-        "That subdomain is already in use. Try another one.",
-    };
-    const normalizedCode = code.toUpperCase();
-    super(
-      codeMessages[normalizedCode] ||
-        (status === 401
-          ? "Your session has expired. Please sign in again."
-          : status === 400
-            ? "Please check the information you entered."
-            : status === 403
-              ? "You do not have permission to complete this request."
-          : status === 429
-            ? "Too many attempts. Please try again later."
-            : status >= 500
-              ? "The service is temporarily unavailable. Please try again later."
-              : "The service could not complete your request. Please try again."),
+    const normalized = normalizeError(
+      {
+        status,
+        code,
+        identifier: details.identifier,
+        bbbCode: details.backendCode,
+      },
+      {
+        status,
+        identifier: details.identifier ?? (code || undefined),
+        backendCode: details.backendCode,
+        operation: details.operation,
+        component: details.component,
+        field: details.field,
+        reason: details.reason,
+        message: details.safeMessage,
+        retryable: details.retryable,
+      },
     );
+
+    const legacyMessage =
+      code.toUpperCase() === "INVALID_INPUT"
+        ? "Please check the information you entered."
+        : code.toUpperCase() === "INVALID_TOKEN"
+          ? "This link is invalid, expired, or already used. Request a new link."
+          : code.toUpperCase() === "INVALID_CREDENTIALS"
+            ? "Email or password is incorrect."
+            : code.toUpperCase() === "UNAUTHORIZED"
+              ? "Your session has expired. Please sign in again."
+              : code.toUpperCase() === "ORIGIN_DENIED"
+                ? "This action is not allowed from this dashboard address."
+                : code.toUpperCase() === "RATE_LIMITED"
+                  ? "Too many attempts. Please try again later."
+                  : code.toUpperCase() === "AUTH_UNAVAILABLE"
+                    ? "Authentication is temporarily unavailable. Please try again later."
+                    : code.toUpperCase() === "INVALID_PATH"
+                      ? "That file path is not allowed. Use a simple name and supported folder path."
+                      : code.toUpperCase() === "UNSUPPORTED_FILE_TYPE"
+                        ? "This file type is not supported. Choose an allowed website file type."
+                        : code.toUpperCase() === "CONTENT_LENGTH_REQUIRED"
+                          ? "The API rejected this upload because it did not receive a file size. The browser cannot set Content-Length manually; please try another supported browser or contact support."
+                          : code.toUpperCase() === "INVALID_UPLOAD"
+                            ? "The API could not verify the complete file upload. Please try uploading the file again."
+                            : code.toUpperCase() === "FILE_TOO_LARGE"
+                              ? "Files must be 25 MiB or smaller."
+                              : code.toUpperCase() === "STORAGE_LIMIT_EXCEEDED"
+                                ? "This upload would exceed the website's 1 GiB storage limit."
+                                : code.toUpperCase() === "FILE_COUNT_LIMIT_EXCEEDED"
+                                  ? "This website has reached its 10,000-file limit."
+                                  : code.toUpperCase() === "FILE_ALREADY_EXISTS"
+                                    ? "A file with that name already exists. Choose Replace to overwrite it."
+                                    : code.toUpperCase() === "FILE_NOT_FOUND"
+                                      ? "That file no longer exists. Refresh the file list."
+                                      : code.toUpperCase() === "PROJECT_BUSY"
+                                        ? "Another file change is in progress. Please try again."
+                                        : code.toUpperCase() === "EMAIL_VERIFICATION_REQUIRED"
+                                          ? "Please verify your email address before continuing."
+                                          : code.toUpperCase() === "EMAIL_NOT_VERIFIED"
+                                            ? "Please verify your email address before creating a website."
+                                            : code.toUpperCase() === "EMAIL_UNVERIFIED"
+                                              ? "Please verify your email address before creating a website."
+                                              : code.toUpperCase() === "DUPLICATE_SLUG"
+                                                ? "That subdomain is already in use. Try another one."
+                                                : code.toUpperCase() === "DUPLICATE_SUBDOMAIN"
+                                                  ? "That subdomain is already in use. Try another one."
+                                                  : code.toUpperCase() === "RESERVED_SLUG"
+                                                    ? "That subdomain is reserved. Choose a different one."
+                                                    : code.toUpperCase() === "RESERVED_SUBDOMAIN"
+                                                      ? "That subdomain is reserved. Choose a different one."
+                                                      : code.toUpperCase() === "SLUG_TAKEN"
+                                                        ? "That subdomain is already in use. Try another one."
+                                                        : code.toUpperCase() === "SLUG_ALREADY_EXISTS"
+                                                          ? "That subdomain is already in use. Try another one."
+                                                          : code.toUpperCase() === "SUBDOMAIN_TAKEN"
+                                                            ? "That subdomain is already in use. Try another one."
+                                                            : code.toUpperCase() === "PROJECT_SLUG_TAKEN"
+                                                              ? "That subdomain is already in use. Try another one."
+                                                              : status === 401
+                                                                ? "Your session has expired. Please sign in again."
+                                                                : status === 400
+                                                                  ? "Please check the information you entered."
+                                                                  : status === 403
+                                                                    ? "You do not have permission to complete this request."
+                                                                    : status === 429
+                                                                      ? "Too many attempts. Please try again later."
+                                                                      : status >= 500
+                                                                        ? "The service is temporarily unavailable. Please try again later."
+                                                                        : "The service could not complete your request. Please try again.";
+
+    super(
+      details.safeMessage ??
+        (status === 409 && !code ? normalized.message : legacyMessage),
+    );
+    this.name = "ApiError";
+    this.bbbCode = normalized.code;
+    this.identifier = normalized.identifier;
+    this.httpStatus = normalized.httpStatus;
+    this.operation = normalized.operation;
+    this.component = normalized.component;
+    this.reason = normalized.reason;
+    this.field = normalized.field;
+    this.timestamp = normalized.timestamp;
+    this.reference = normalized.reference;
+    this.retryable = normalized.retryable;
+  }
+
+  toReport(): string {
+    return formatErrorReport({
+      code: this.bbbCode,
+      identifier: this.identifier,
+      httpStatus: this.httpStatus,
+      component: this.component,
+      operation: this.operation,
+      field: this.field,
+      reason: this.reason ?? this.message,
+      timestamp: this.timestamp,
+      reference: this.reference,
+      message: this.message,
+    });
   }
 }
+
+const SAFE_RETRY_CAPABILITIES = new Set([
+  "auth.session",
+  "projects.list",
+  "files.list",
+  "files.storage",
+  "files.download",
+  "api.info",
+  "api.health",
+  "api.projectCount",
+]);
+
+function makeApiError(
+  status: number,
+  capability: string,
+  reason: string,
+  parsed: ReturnType<typeof parseBackendError>,
+): ApiError {
+  return new ApiError(
+    status,
+    parsed.identifier ?? (status === 401 ? "UNAUTHORIZED" : ""),
+    {
+      identifier: parsed.identifier,
+      backendCode: parsed.backendCode,
+      safeMessage: parsed.safeMessage,
+      operation: capability,
+      component: "API Client",
+      reason,
+      retryable: SAFE_RETRY_CAPABILITIES.has(capability),
+    },
+  );
+}
+
+async function errorFromResponse(
+  response: Response,
+  capability: string,
+  reason: string,
+): Promise<ApiError> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = undefined;
+  }
+  return makeApiError(
+    response.status,
+    capability,
+    reason,
+    parseBackendError(payload),
+  );
+}
+
 export interface ApiRequestOptions extends Omit<
   RequestInit,
   "credentials" | "redirect"
@@ -297,21 +433,14 @@ export async function api<T = unknown>(
       headers,
     });
   } catch {
-    throw new Error(
-      "Cannot reach the BuiltByBuzz API. Check your connection and the API's CORS policy for this dashboard origin.",
-    );
+    throw createDiagnosticError("NETWORK_ERROR", {
+      operation: capability,
+      component: "API Client",
+      reason: "Network request failed",
+      retryable: SAFE_RETRY_CAPABILITIES.has(capability),
+    });
   }
   if (!response.ok) {
-    let code = "";
-    try {
-      const error = await response.json();
-      code =
-        error.error?.code ||
-        error.code ||
-        (typeof error.error === "string" ? error.error : "");
-    } catch {
-      /* Never expose raw server errors. */
-    }
     if (
       route.session &&
       response.status === 401 &&
@@ -319,10 +448,7 @@ export async function api<T = unknown>(
       typeof window !== "undefined"
     )
       window.dispatchEvent(new Event("bbb-session-expired"));
-    throw new ApiError(
-      response.status,
-      code || (response.status === 401 ? "UNAUTHORIZED" : ""),
-    );
+    throw await errorFromResponse(response, capability, "Request failed");
   }
   if (response.status === 204) return undefined as T;
   const body = await response.text();
@@ -330,7 +456,11 @@ export async function api<T = unknown>(
     try {
       return JSON.parse(body) as T;
     } catch {
-      throw new Error("The API returned an invalid JSON response.");
+      throw createDiagnosticError("INVALID_API_RESPONSE", {
+        operation: capability,
+        component: "API Client",
+        reason: "Invalid response shape",
+      });
     }
   }
   return body as T;
@@ -359,31 +489,21 @@ export async function apiBlob(
       redirect: "error",
     });
   } catch {
-    throw new Error(
-      "Cannot reach the BuiltByBuzz API. Check your connection and the API's CORS policy for this dashboard origin.",
-    );
+    throw createDiagnosticError("NETWORK_ERROR", {
+      operation: capability,
+      component: "API Client",
+      reason: "Network request failed",
+      retryable: SAFE_RETRY_CAPABILITIES.has(capability),
+    });
   }
   if (!response.ok) {
-    let code = "";
-    try {
-      const error = await response.json();
-      code =
-        error.error?.code ||
-        error.code ||
-        (typeof error.error === "string" ? error.error : "");
-    } catch {
-      /* Never expose raw server errors. */
-    }
     if (
       route.session &&
       response.status === 401 &&
       typeof window !== "undefined"
     )
       window.dispatchEvent(new Event("bbb-session-expired"));
-    throw new ApiError(
-      response.status,
-      code || (response.status === 401 ? "UNAUTHORIZED" : ""),
-    );
+    throw await errorFromResponse(response, capability, "Request failed");
   }
   return {
     blob: await response.blob(),
@@ -419,16 +539,24 @@ export function apiUpload(
     };
     request.onerror = () =>
       reject(
-        new Error(
-          "Cannot reach the BuiltByBuzz API. Check your connection and the API's CORS policy for this dashboard origin.",
-        ),
+        createDiagnosticError("NETWORK_ERROR", {
+          operation: capability,
+          component: "API Client",
+          reason: "Network request failed",
+        }),
       );
     request.onload = () => {
       let responseUrl: URL;
       try {
         responseUrl = new URL(request.responseURL);
       } catch {
-        reject(new Error("The API returned an invalid upload response URL."));
+        reject(
+          createDiagnosticError("INVALID_API_RESPONSE", {
+            operation: capability,
+            component: "API Client",
+            reason: "Invalid response shape",
+          }),
+        );
         return;
       }
       if (
@@ -436,19 +564,21 @@ export function apiUpload(
         responseUrl.pathname !== expectedUrl.pathname ||
         responseUrl.search !== expectedUrl.search
       ) {
-        reject(new Error("The API redirected this upload unexpectedly."));
+        reject(
+          createDiagnosticError("INVALID_API_RESPONSE", {
+            operation: capability,
+            component: "API Client",
+            reason: "Invalid response shape",
+          }),
+        );
         return;
       }
       if (request.status < 200 || request.status >= 300) {
-        let code = "";
+        let payload: unknown;
         try {
-          const error = JSON.parse(request.responseText);
-          code =
-            error.error?.code ||
-            error.code ||
-            (typeof error.error === "string" ? error.error : "");
+          payload = JSON.parse(request.responseText);
         } catch {
-          /* Never expose raw server errors. */
+          payload = undefined;
         }
         if (
           route.session &&
@@ -457,9 +587,11 @@ export function apiUpload(
         )
           window.dispatchEvent(new Event("bbb-session-expired"));
         reject(
-          new ApiError(
+          makeApiError(
             request.status,
-            code || (request.status === 401 ? "UNAUTHORIZED" : ""),
+            capability,
+            "Upload failed",
+            parseBackendError(payload),
           ),
         );
         return;
@@ -467,7 +599,13 @@ export function apiUpload(
       try {
         resolve(request.responseText ? JSON.parse(request.responseText) : null);
       } catch {
-        reject(new Error("The API returned an invalid JSON response."));
+        reject(
+          createDiagnosticError("INVALID_API_RESPONSE", {
+            operation: capability,
+            component: "API Client",
+            reason: "Invalid response shape",
+          }),
+        );
       }
     };
     request.send(file);

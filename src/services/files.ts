@@ -1,4 +1,5 @@
 import { api, apiBlob, apiUpload } from "./api";
+import { createDiagnosticError } from "./errors";
 import type { HostedFile } from "../types";
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -120,7 +121,11 @@ export function validateFilePath(path: string): string | null {
  */
 function parseFile(value: unknown, projectId: string): HostedFile {
   if (!isRecord(value)) {
-    throw new Error("The API returned an unexpected file record.");
+    throw createDiagnosticError("INVALID_FILE_METADATA", {
+      component: "File Manager",
+      operation: "Load Files",
+      reason: "Failed validation",
+    });
   }
 
   const path = value.path;
@@ -133,9 +138,7 @@ function parseFile(value: unknown, projectId: string): HostedFile {
   if (typeof path !== "string") {
     problems.push("path: expected string");
   } else if (!validPath(path)) {
-    problems.push(
-      `path: failed validation (${JSON.stringify(path)})`
-    );
+    problems.push("path: failed validation");
   }
 
   if (
@@ -157,9 +160,13 @@ function parseFile(value: unknown, projectId: string): HostedFile {
   }
 
   if (problems.length > 0) {
-    throw new Error(
-      `The API returned a file with invalid metadata: ${problems.join("; ")}.`,
-    );
+    const field = problems[0].split(":")[0];
+    throw createDiagnosticError("INVALID_FILE_METADATA", {
+      component: "File Manager",
+      operation: "Load Files",
+      field,
+      reason: "Failed validation",
+    });
   }
 
   // Explicit type narrowing for TypeScript.
@@ -170,7 +177,11 @@ function parseFile(value: unknown, projectId: string): HostedFile {
     !(typeof contentType === "string" || contentType === null) ||
     typeof updatedAt !== "string"
   ) {
-    throw new Error("The API returned unexpected file metadata types.");
+    throw createDiagnosticError("INVALID_FILE_METADATA", {
+      component: "File Manager",
+      operation: "Load Files",
+      reason: "Failed validation",
+    });
   }
 
   const slash = path.lastIndexOf("/");
@@ -197,7 +208,12 @@ export function parseFilePage(
     !Array.isArray(payload.files) ||
     !(payload.next_cursor === null || typeof payload.next_cursor === "string")
   ) {
-    throw new Error("The API returned an unexpected file listing.");
+    throw createDiagnosticError("FILE_LIST_FAILED", {
+      component: "File Manager",
+      operation: "Load Files",
+      field: "files",
+      reason: "Unexpected response shape",
+    });
   }
 
   return {
@@ -212,7 +228,12 @@ export function parseStorage(payload: unknown): ProjectStorage {
     payload.success !== true ||
     !isRecord(payload.storage)
   ) {
-    throw new Error("The API returned an unexpected storage response.");
+    throw createDiagnosticError("INVALID_API_RESPONSE", {
+      component: "File Manager",
+      operation: "Load Storage",
+      field: "storage",
+      reason: "Unexpected response shape",
+    });
   }
 
   const {
@@ -235,7 +256,12 @@ export function parseStorage(payload: unknown): ProjectStorage {
     (quota_bytes as number) <= 0 ||
     percent_used < 0
   ) {
-    throw new Error("The API returned invalid storage usage.");
+    throw createDiagnosticError("INVALID_API_RESPONSE", {
+      component: "File Manager",
+      operation: "Load Storage",
+      field: "storage",
+      reason: "Failed validation",
+    });
   }
 
   return {
@@ -251,6 +277,7 @@ function validateUploadResponse(
   payload: unknown,
   path: string,
   size: number,
+  operation: "files.upload" | "files.replace",
 ): void {
   if (
     !isRecord(payload) ||
@@ -260,7 +287,14 @@ function validateUploadResponse(
     payload.file.size !== size ||
     typeof payload.file.content_type !== "string"
   ) {
-    throw new Error("The API returned an unexpected upload response.");
+    throw createDiagnosticError(
+      operation === "files.replace" ? "FILE_REPLACE_FAILED" : "FILE_UPLOAD_FAILED",
+      {
+        component: "File Manager",
+        operation: operation === "files.replace" ? "Replace File" : "Upload File",
+        reason: "Unexpected response shape",
+      },
+    );
   }
 }
 
@@ -273,7 +307,11 @@ function validateDeleteResponse(
     payload.success !== true ||
     payload.deleted !== path
   ) {
-    throw new Error("The API returned an unexpected delete response.");
+    throw createDiagnosticError("FILE_DELETE_FAILED", {
+      component: "File Manager",
+      operation: "Delete File",
+      reason: "Unexpected response shape",
+    });
   }
 }
 
@@ -313,7 +351,7 @@ export const files = {
       onProgress,
     );
 
-    validateUploadResponse(result, path, file.size);
+    validateUploadResponse(result, path, file.size, "files.upload");
   },
 
   replace: async (
@@ -329,7 +367,7 @@ export const files = {
       onProgress,
     );
 
-    validateUploadResponse(result, path, file.size);
+    validateUploadResponse(result, path, file.size, "files.replace");
   },
 
   remove: async (

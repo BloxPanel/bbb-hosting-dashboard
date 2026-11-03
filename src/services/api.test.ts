@@ -131,7 +131,7 @@ describe("confirmed API requests", () => {
     [400, "check the information"],
     [401, "session has expired"],
     [403, "permission to complete"],
-    [409, "subdomain is already in use"],
+    [409, "resource already exists"],
     [429, "Too many attempts"],
     [503, "temporarily unavailable"],
   ])(
@@ -158,6 +158,105 @@ describe("confirmed API requests", () => {
     await expect(projects.create("Example", "example")).rejects.toThrow(
       "verify your email",
     );
+  });
+  it("parses the production BBB numeric error response and preserves HTTP status", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: "UNAUTHORIZED",
+          code: 1002,
+          message: "Please sign in to continue.",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    let failure: unknown;
+    try {
+      await files.list("project_1");
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      status: 401,
+      httpStatus: 401,
+      bbbCode: 1002,
+      identifier: "UNAUTHORIZED",
+      message: "Please sign in to continue.",
+    });
+  });
+  it("does not display arbitrary messages or trust mismatched numeric codes", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: "UNAUTHORIZED",
+          code: 1003,
+          message: "private token and account details",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    let failure: unknown;
+    try {
+      await files.storage("project_1");
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      status: 401,
+      bbbCode: 1002,
+      identifier: "UNAUTHORIZED",
+    });
+    expect((failure as Error).message).not.toContain("private token");
+    expect((failure as Error).message).not.toContain("account details");
+  });
+  it("maps numeric website and file errors only when the code matches the identifier", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: "SUBDOMAIN_TAKEN",
+          code: 3002,
+          message: "That subdomain is already registered.",
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    let websiteFailure: unknown;
+    try {
+      await projects.create("Example", "example");
+    } catch (error) {
+      websiteFailure = error;
+    }
+    expect(websiteFailure).toMatchObject({
+      status: 409,
+      bbbCode: 3002,
+      identifier: "SUBDOMAIN_TAKEN",
+    });
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: "FILE_TOO_LARGE",
+          code: 2004,
+          message: "This file exceeds the maximum upload size.",
+        }),
+        { status: 413, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    let fileFailure: unknown;
+    try {
+      await files.list("project_1");
+    } catch (error) {
+      fileFailure = error;
+    }
+    expect(fileFailure).toMatchObject({
+      status: 413,
+      bbbCode: 2004,
+      identifier: "FILE_TOO_LARGE",
+    });
   });
   it("sends checkout bearer authentication and project_id", async () => {
     reply({ result: "backend checkout payload" });
@@ -331,7 +430,7 @@ describe("confirmed API requests", () => {
   });
   it("reports network/CORS, HTTP, and malformed JSON errors", async () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    await expect(connectivity.health()).rejects.toThrow(/CORS/);
+    await expect(connectivity.health()).rejects.toThrow(/contact the service/);
     mockFetch.mockResolvedValueOnce(new Response("denied", { status: 403 }));
     await expect(connectivity.health()).rejects.toThrow(/permission to complete/);
     mockFetch.mockResolvedValueOnce(
@@ -339,7 +438,7 @@ describe("confirmed API requests", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
-    await expect(connectivity.health()).rejects.toThrow(/invalid JSON/);
+    await expect(connectivity.health()).rejects.toThrow(/unexpected response/);
   });
   it("preserves plain informational responses", async () => {
     mockFetch.mockResolvedValueOnce(

@@ -14,6 +14,7 @@ import { useSite } from "./Site";
 import { useApp } from "../app/state";
 import { initialFiles } from "../services/demo";
 import { DEMO } from "../services/api";
+import { hasDiagnosticCode } from "../services/errors";
 import {
   files as fileApi,
   MAX_FILE_BYTES,
@@ -23,6 +24,7 @@ import {
   type ProjectStorage,
 } from "../services/files";
 import { EmptyState, Modal } from "../components/ui";
+import { ErrorDisplay } from "../components/ErrorDisplay";
 import type { HostedFile } from "../types";
 
 const DEMO_MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -105,9 +107,17 @@ export default function FileManager() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(!DEMO);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown | null>(null);
   const [storage, setStorage] = useState<ProjectStorage | null>(null);
-  const [storageError, setStorageError] = useState("");
+  const [storageError, setStorageError] = useState<unknown | null>(null);
+  const [uploadFailure, setUploadFailure] = useState<{
+    error: unknown;
+    operation: "Upload File" | "Replace File";
+  } | null>(null);
+  const [downloadFailure, setDownloadFailure] = useState<{
+    error: unknown;
+    file: HostedFile;
+  } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [progress, setProgress] = useState<{
     name: string;
@@ -121,9 +131,10 @@ export default function FileManager() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [previewError, setPreviewError] = useState("");
+  const [previewFailure, setPreviewFailure] = useState<unknown | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [deleting, setDeleting] = useState<HostedFile | null>(null);
-  const [deleteError, setDeleteError] = useState("");
+  const [deleteError, setDeleteError] = useState<unknown | null>(null);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const replaceTarget = useRef<HostedFile | null>(null);
@@ -132,8 +143,10 @@ export default function FileManager() {
     if (DEMO) return;
     let active = true;
     setLoading(true);
-    setError("");
-    setStorageError("");
+    setError(null);
+    setStorageError(null);
+    setUploadFailure(null);
+    setDownloadFailure(null);
     setRemoteFiles([]);
     setCursor(null);
     setHasMore(false);
@@ -146,20 +159,12 @@ export default function FileManager() {
           setCursor(pageResult.value.nextCursor);
           setHasMore(pageResult.value.nextCursor !== null);
         } else {
-          setError(
-            pageResult.reason instanceof Error
-              ? pageResult.reason.message
-              : "Could not load this website's files.",
-          );
+          setError(pageResult.reason);
         }
         if (storageResult.status === "fulfilled") {
           setStorage(storageResult.value);
         } else {
-          setStorageError(
-            storageResult.reason instanceof Error
-              ? storageResult.reason.message
-              : "Could not load storage usage.",
-          );
+          setStorageError(storageResult.reason);
         }
       })
       .finally(() => {
@@ -242,7 +247,7 @@ export default function FileManager() {
   async function loadMore() {
     if (DEMO || !cursor || loadingMore) return;
     setLoadingMore(true);
-    setError("");
+    setError(null);
     try {
       const page = await fileApi.list(site.id, cursor);
       setRemoteFiles((current) => {
@@ -253,11 +258,7 @@ export default function FileManager() {
       setCursor(page.nextCursor);
       setHasMore(page.nextCursor !== null);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not load more files.",
-      );
+      setError(requestError);
     } finally {
       setLoadingMore(false);
     }
@@ -341,6 +342,7 @@ export default function FileManager() {
     }
     busyRef.current = true;
     setBusy(true);
+    setUploadFailure(null);
     let changed = false;
     try {
       for (let index = 0; index < chosen.length; index += 1) {
@@ -385,11 +387,10 @@ export default function FileManager() {
             : "Upload complete. This does not publish or deploy your website.",
       );
     } catch (requestError) {
-      setNotice(
-        requestError instanceof Error
-          ? requestError.message
-          : "The upload could not be completed.",
-      );
+      setUploadFailure({
+        error: requestError,
+        operation: target ? "Replace File" : "Upload File",
+      });
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -413,6 +414,7 @@ export default function FileManager() {
       if (!file.dataUrl) window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       return;
     }
+    setDownloadFailure(null);
     try {
       const result = await fileApi.download(site.id, objectPath(file));
       const url = URL.createObjectURL(result.blob);
@@ -422,11 +424,7 @@ export default function FileManager() {
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (requestError) {
-      setNotice(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not download this file.",
-      );
+      setDownloadFailure({ error: requestError, file });
     }
   }
 
@@ -435,6 +433,7 @@ export default function FileManager() {
     setPreviewUrl("");
     setPreviewContent("");
     setPreviewError("");
+    setPreviewFailure(null);
     const extension = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
     const isText = TEXT_PREVIEW_EXTENSIONS.has(extension);
     const isImage = file.mime.startsWith("image/") && extension !== "svg";
@@ -454,11 +453,7 @@ export default function FileManager() {
       if (isImage) setPreviewUrl(URL.createObjectURL(result.blob));
       else setPreviewContent(await result.blob.text());
     } catch (requestError) {
-      setPreviewError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not load the file preview.",
-      );
+      setPreviewFailure(requestError);
     } finally {
       setPreviewLoading(false);
     }
@@ -468,7 +463,7 @@ export default function FileManager() {
     if (!deleting || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
-    setDeleteError("");
+    setDeleteError(null);
     try {
       if (DEMO) {
         const prefix = `${deleting.path === "/" ? "" : deleting.path.slice(1)}${deleting.name}/`;
@@ -491,11 +486,7 @@ export default function FileManager() {
           : "File deleted. Your website was not published or deployed.",
       );
     } catch (requestError) {
-      setDeleteError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not delete this file.",
-      );
+      setDeleteError(requestError);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -586,6 +577,38 @@ export default function FileManager() {
         )}
       </section>
 
+      {uploadFailure && (
+        <ErrorDisplay
+          error={uploadFailure.error}
+          context={{
+            identifier: hasDiagnosticCode(uploadFailure.error)
+              ? undefined
+              : uploadFailure.operation === "Replace File"
+                ? "FILE_REPLACE_FAILED"
+                : "FILE_UPLOAD_FAILED",
+            component: "File Manager",
+            operation: uploadFailure.operation,
+            reason: "Upload failed",
+            retryable: false,
+          }}
+        />
+      )}
+      {downloadFailure && (
+        <ErrorDisplay
+          error={downloadFailure.error}
+          context={{
+            identifier: hasDiagnosticCode(downloadFailure.error)
+              ? undefined
+              : "INVALID_API_RESPONSE",
+            component: "File Manager",
+            operation: "Download File",
+            reason: "Download failed",
+            retryable: true,
+          }}
+          onRetry={() => download(downloadFailure.file)}
+        />
+      )}
+
       <section className="card storage-card" aria-label="Storage usage">
         <div className="row between">
           <div>
@@ -603,7 +626,22 @@ export default function FileManager() {
           max={100}
           value={Math.min(storagePercent, 100)}
         />
-        {storageError && <p className="file-error" role="alert">{storageError}</p>}
+        {storageError !== null && (
+          <ErrorDisplay
+            error={storageError}
+            context={{
+              identifier: hasDiagnosticCode(storageError)
+                ? undefined
+                : "INVALID_API_RESPONSE",
+              component: "File Manager",
+              operation: "Load Storage",
+              reason: "Unexpected response shape",
+              retryable: true,
+            }}
+            onRetry={refresh}
+            retryLabel="Retry storage"
+          />
+        )}
       </section>
 
       <section className="card">
@@ -651,12 +689,22 @@ export default function FileManager() {
           </div>
         </div>
 
-        {error && (
-          <div className="file-error-box" role="alert">
-            <p>{error}</p>
-            <button className="secondary" onClick={refresh}>
-              Try again
-            </button>
+        {error !== null && (
+          <div className="file-error-box">
+            <ErrorDisplay
+              error={error}
+              context={{
+                identifier: hasDiagnosticCode(error)
+                  ? undefined
+                  : "FILE_LIST_FAILED",
+                component: "File Manager",
+                operation: "Load Files",
+                reason: "Unexpected response shape",
+                retryable: true,
+              }}
+              onRetry={refresh}
+              retryLabel="Try again"
+            />
           </div>
         )}
         {loading ? (
@@ -739,7 +787,7 @@ export default function FileManager() {
                             aria-label={`Delete ${file.name}`}
                             disabled={busy || mutationUnavailable}
                             onClick={() => {
-                              setDeleteError("");
+                              setDeleteError(null);
                               setDeleting(file);
                             }}
                           >
@@ -802,6 +850,20 @@ export default function FileManager() {
         >
           {previewLoading ? (
             <p role="status">Loading preview…</p>
+          ) : previewFailure ? (
+            <ErrorDisplay
+              error={previewFailure}
+              context={{
+                identifier: hasDiagnosticCode(previewFailure)
+                  ? undefined
+                  : "INVALID_API_RESPONSE",
+                component: "File Manager",
+                operation: "Load Preview",
+                reason: "Download failed",
+                retryable: true,
+              }}
+              onRetry={() => openPreview(preview)}
+            />
           ) : previewError ? (
             <p role="alert">{previewError}</p>
           ) : previewUrl ? (
@@ -823,7 +885,20 @@ export default function FileManager() {
           <p>
             Delete <strong>{deleting.name}</strong>? This cannot be undone.
           </p>
-          {deleteError && <p className="file-error" role="alert">{deleteError}</p>}
+          {deleteError !== null && (
+            <ErrorDisplay
+              error={deleteError}
+              context={{
+                identifier: hasDiagnosticCode(deleteError)
+                  ? undefined
+                  : "FILE_DELETE_FAILED",
+                component: "File Manager",
+                operation: "Delete File",
+                reason: "Delete failed",
+                retryable: false,
+              }}
+            />
+          )}
           <button className="danger" disabled={busy} onClick={() => void confirmDelete()}>
             {busy ? "Deleting…" : "Delete file"}
           </button>
