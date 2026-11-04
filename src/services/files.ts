@@ -3,8 +3,59 @@ import { createDiagnosticError } from "./errors";
 import type { HostedFile } from "../types";
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_INLINE_EDIT_BYTES = 1024 * 1024;
 export const MAX_STORAGE_BYTES = 1024 * 1024 * 1024;
 export const MAX_PROJECT_FILES = 10_000;
+
+const EDITABLE_EXTENSIONS = new Set([
+  "css",
+  "csv",
+  "htm",
+  "html",
+  "js",
+  "json",
+  "md",
+  "mjs",
+  "txt",
+  "webmanifest",
+  "xml",
+]);
+
+export function isEditableFilePath(path: string): boolean {
+  const filename = path.slice(path.lastIndexOf("/") + 1);
+  const extension = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
+  return EDITABLE_EXTENSIONS.has(extension);
+}
+
+export function decodeEditableText(bytes: ArrayBuffer): {
+  content: string;
+  lineSeparator: string;
+} {
+  let content: string;
+  try {
+    content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw createDiagnosticError("INVALID_API_RESPONSE", {
+      component: "Code Editor",
+      operation: "Load Editor File",
+      reason: "File is not valid UTF-8",
+    });
+  }
+
+  const separators = content.match(/\r\n|\r|\n/g) ?? [];
+  if (new Set(separators).size > 1) {
+    throw createDiagnosticError("INVALID_API_RESPONSE", {
+      component: "Code Editor",
+      operation: "Load Editor File",
+      reason: "Mixed line endings cannot be preserved safely",
+    });
+  }
+
+  return {
+    content,
+    lineSeparator: separators[0] ?? "\n",
+  };
+}
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   html: "text/html",

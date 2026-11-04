@@ -1,9 +1,8 @@
 import {
-  BrowserRouter,
+  createBrowserRouter,
   Navigate,
   Outlet,
-  Route,
-  Routes,
+  RouterProvider,
   useLocation,
 } from "react-router-dom";
 import { AppProvider, useApp } from "./state";
@@ -21,6 +20,54 @@ import {
 import FileManager from "../pages/FileManager";
 import AccountBilling, { SiteBilling } from "../pages/Billing";
 import Account, { Support } from "../pages/Account";
+
+const router = createBrowserRouter([
+  { path: "/login", element: <Login key="login" /> },
+  { path: "/register", element: <Login key="register" signUp /> },
+  { path: "/forgot-password", element: <Login key="forgot" mode="forgot" /> },
+  { path: "/verify-email", element: <Login key="verify" mode="verify" /> },
+  { path: "/reset-password", element: <Login key="reset" mode="reset" /> },
+  { path: "/signup", element: <Login key="signup" signUp /> },
+  {
+    element: <Protected />,
+    children: [
+      {
+        path: "/dashboard",
+        element: <Layout />,
+        children: [
+          { index: true, element: <Overview /> },
+          { path: "sites", element: <Websites /> },
+          {
+            path: "sites/:siteId",
+            element: <SiteLayout />,
+            children: [
+              { index: true, element: <SiteOverview /> },
+              { path: "files", element: <FileManager /> },
+              { path: "domains", element: <Domains /> },
+              { path: "deployments", element: <Deployments /> },
+              { path: "billing", element: <SiteBilling /> },
+              { path: "settings", element: <SiteSettings /> },
+            ],
+          },
+          { path: "billing", element: <AccountBilling /> },
+          { path: "account", element: <Account /> },
+          { path: "support", element: <Support /> },
+          {
+            path: "*",
+            element: (
+              <EmptyState
+                title="Page not found"
+                description="Use the navigation to return to your workspace."
+              />
+            ),
+          },
+        ],
+      },
+    ],
+  },
+  { path: "*", element: <Navigate to="/dashboard" replace /> },
+]);
+
 function Protected() {
   const location = useLocation();
   const { user, loading } = useApp();
@@ -38,52 +85,7 @@ function Protected() {
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login key="login" />} />
-          <Route path="/register" element={<Login key="register" signUp />} />
-          <Route
-            path="/forgot-password"
-            element={<Login key="forgot" mode="forgot" />}
-          />
-          <Route
-            path="/verify-email"
-            element={<Login key="verify" mode="verify" />}
-          />
-          <Route
-            path="/reset-password"
-            element={<Login key="reset" mode="reset" />}
-          />
-          <Route path="/signup" element={<Login key="signup" signUp />} />
-          <Route element={<Protected />}>
-            <Route path="/dashboard" element={<Layout />}>
-              <Route index element={<Overview />} />
-              <Route path="sites" element={<Websites />} />
-              <Route path="sites/:siteId" element={<SiteLayout />}>
-                <Route index element={<SiteOverview />} />
-                <Route path="files" element={<FileManager />} />
-                <Route path="domains" element={<Domains />} />
-                <Route path="deployments" element={<Deployments />} />
-                <Route path="billing" element={<SiteBilling />} />
-                <Route path="settings" element={<SiteSettings />} />
-              </Route>
-              <Route path="billing" element={<AccountBilling />} />
-              <Route path="account" element={<Account />} />
-              <Route path="support" element={<Support />} />
-              <Route
-                path="*"
-                element={
-                  <EmptyState
-                    title="Page not found"
-                    description="Use the navigation to return to your workspace."
-                  />
-                }
-              />
-            </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </AppProvider>
   );
 }

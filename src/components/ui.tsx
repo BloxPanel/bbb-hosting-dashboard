@@ -37,11 +37,13 @@ export function Modal({
   children,
   onClose,
   closeDisabled = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeDisabled?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -52,6 +54,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
+      className={className}
       onCancel={(event) => {
         event.preventDefault();
         if (!closeDisabled) onClose();

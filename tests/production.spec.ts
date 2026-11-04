@@ -242,6 +242,7 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
     },
   ];
   const mutations: Array<{ method: string; path: string; bodyLength: number }> = [];
+  let failEditorSave = false;
   await page.route("**/v1/projects/project-files/files**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -293,6 +294,20 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
       await route.fulfill({
         status: 411,
         json: { success: false, error: "CONTENT_LENGTH_REQUIRED" },
+        headers,
+      });
+      return;
+    }
+    if (request.method() === "PUT" && path === "index.html" && failEditorSave) {
+      failEditorSave = false;
+      await route.fulfill({
+        status: 403,
+        json: {
+          success: false,
+          error: "STORAGE_LIMIT_EXCEEDED",
+          code: 2003,
+          message: "Your website has reached its storage limit.",
+        },
         headers,
       });
       return;
@@ -399,7 +414,7 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
     mimeType: "text/html",
     buffer: Buffer.from("<h1>Retry</h1>"),
   });
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator(".bbb-error-display")).toContainText(
     "browser cannot set Content-Length manually",
   );
   await page.locator(".dropzone").evaluate((dropzone) => {
@@ -420,6 +435,28 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
     method: "POST",
     path: "dragged.html",
   });
+
+  const storageBeforeEditorSave = await page.getByLabel("Storage usage").innerText();
+  await page.getByRole("button", { name: "Edit index.html" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.locator(".cm-content").fill("<h1>Saved from editor</h1>");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("File saved.");
+  expect(mutations.at(-1)).toMatchObject({
+    method: "PUT",
+    path: "index.html",
+    bodyLength: Buffer.byteLength("<h1>Saved from editor</h1>"),
+  });
+  await expect(page.getByLabel("Storage usage")).not.toHaveText(storageBeforeEditorSave);
+
+  await editor.locator(".cm-content").fill("<h1>Retained after failure</h1>");
+  failEditorSave = true;
+  const mutationCountBeforeFailure = mutations.length;
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor).toContainText("Error 2003");
+  await expect(editor.locator(".cm-content")).toContainText("Retained after failure");
+  expect(mutations).toHaveLength(mutationCountBeforeFailure + 1);
+  await expect(editor).toContainText("Unsaved changes");
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 

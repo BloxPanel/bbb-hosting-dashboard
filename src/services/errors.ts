@@ -132,10 +132,15 @@ const SAFE_REASONS = new Set([
   "Upload failed",
   "Download failed",
   "Delete failed",
+  "Save failed",
   "Failed validation",
   "Unexpected response shape",
   "Network request failed",
   "Invalid response shape",
+  "File is not valid UTF-8",
+  "Mixed line endings cannot be preserved safely",
+  "Inline edit size limit exceeded",
+  "Unsupported file type",
 ]);
 const SAFE_FIELDS = new Set([
   "path",
@@ -154,6 +159,7 @@ const SAFE_FIELDS = new Set([
 const SAFE_LABELS = new Set([
   "API Client",
   "File Manager",
+  "Code Editor",
   "Websites",
   "Authentication",
   "API Connectivity",
@@ -186,6 +192,8 @@ const SAFE_LABELS = new Set([
   "Download File",
   "Delete File",
   "Load Preview",
+  "Load Editor File",
+  "Save File",
   "Check API Health",
   "Read Project Count",
 ]);
@@ -203,6 +211,7 @@ const SAFE_RETRY_OPERATIONS = new Set([
   "Load Storage",
   "Download File",
   "Load Preview",
+  "Load Editor File",
   "Check API Health",
   "Read Project Count",
 ]);

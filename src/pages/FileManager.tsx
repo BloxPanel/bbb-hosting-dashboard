@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useBlocker } from "react-router-dom";
 import {
   ArrowLeft,
+  Code2,
   Download,
   Eye,
   FileText,
@@ -14,18 +16,25 @@ import { useSite } from "./Site";
 import { useApp } from "../app/state";
 import { initialFiles } from "../services/demo";
 import { DEMO } from "../services/api";
-import { hasDiagnosticCode } from "../services/errors";
+import { createDiagnosticError, hasDiagnosticCode } from "../services/errors";
 import {
+  decodeEditableText,
   files as fileApi,
   MAX_FILE_BYTES,
+  MAX_INLINE_EDIT_BYTES,
   MAX_PROJECT_FILES,
   MAX_STORAGE_BYTES,
+  isEditableFilePath,
   validateFilePath,
   type ProjectStorage,
 } from "../services/files";
 import { EmptyState, Modal } from "../components/ui";
 import { ErrorDisplay } from "../components/ErrorDisplay";
 import type { HostedFile } from "../types";
+
+const CodeEditor = lazy(() =>
+  import("../components/CodeEditor").then((module) => ({ default: module.CodeEditor })),
+);
 
 const DEMO_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const TEXT_PREVIEW_EXTENSIONS = new Set([
@@ -77,6 +86,16 @@ function makeDemoFile(siteId: string, file: File, path: string): Promise<HostedF
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
+      let content: string | undefined;
+      if (isText) {
+        try {
+          if (!(reader.result instanceof ArrayBuffer)) throw new TypeError();
+          content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(reader.result);
+        } catch {
+          reject(new Error("Text files must contain valid UTF-8 data."));
+          return;
+        }
+      }
       const slash = path.lastIndexOf("/");
       resolve({
         id: path,
@@ -86,13 +105,13 @@ function makeDemoFile(siteId: string, file: File, path: string): Promise<HostedF
         size: file.size,
         kind: "file",
         mime,
-        content: isText ? String(reader.result) : undefined,
+        content,
         dataUrl: isText ? undefined : String(reader.result),
         modified: new Date().toISOString(),
       });
     };
     reader.onerror = () => reject(new Error("Unable to read the selected file."));
-    if (isText) reader.readAsText(file);
+    if (isText) reader.readAsArrayBuffer(file);
     else reader.readAsDataURL(file);
   });
 }
@@ -133,11 +152,45 @@ export default function FileManager() {
   const [previewError, setPreviewError] = useState("");
   const [previewFailure, setPreviewFailure] = useState<unknown | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editorFile, setEditorFile] = useState<HostedFile | null>(null);
+  const [editorContent, setEditorContent] = useState("");
+  const [editorSavedContent, setEditorSavedContent] = useState("");
+  const [editorLineSeparator, setEditorLineSeparator] = useState("\n");
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorLoaded, setEditorLoaded] = useState(false);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorSavePercent, setEditorSavePercent] = useState(0);
+  const [editorFailure, setEditorFailure] = useState<unknown | null>(null);
+  const [editorFailureOperation, setEditorFailureOperation] = useState<"Load Editor File" | "Save File">("Load Editor File");
+  const [editorIssue, setEditorIssue] = useState("");
   const [deleting, setDeleting] = useState<HostedFile | null>(null);
   const [deleteError, setDeleteError] = useState<unknown | null>(null);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const replaceTarget = useRef<HostedFile | null>(null);
+  const editorDirty = editorFile !== null && editorContent !== editorSavedContent;
+  const navigationBlocker = useBlocker(editorDirty);
+
+  useEffect(() => {
+    if (!editorDirty) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  }, [editorDirty]);
+
+  useEffect(() => {
+    if (navigationBlocker.state !== "blocked") return;
+    if (window.confirm("This file has unsaved changes. Discard them and leave the editor?")) {
+      navigationBlocker.proceed();
+    } else {
+      navigationBlocker.reset();
+    }
+  }, [navigationBlocker]);
 
   useEffect(() => {
     if (DEMO) return;
@@ -459,6 +512,174 @@ export default function FileManager() {
     }
   }
 
+  async function openEditor(file: HostedFile) {
+    setPreview(null);
+    setEditorFile(file);
+    setEditorContent("");
+    setEditorSavedContent("");
+    setEditorLoaded(false);
+    setEditorLineSeparator("\n");
+    setEditorFailure(null);
+    setEditorIssue("");
+    if (!isEditableFilePath(objectPath(file))) {
+      setEditorIssue("This file type cannot be edited inline.");
+      setEditorFailureOperation("Load Editor File");
+      setEditorFailure(
+        createDiagnosticError("UNSUPPORTED_FILE_TYPE", {
+          component: "Code Editor",
+          operation: "Load Editor File",
+          reason: "Unsupported file type",
+        }),
+      );
+      return;
+    }
+    if (file.size > MAX_INLINE_EDIT_BYTES) {
+      setEditorIssue(
+        `This file is ${formatBytes(file.size)}. Inline editing is limited to ${formatBytes(MAX_INLINE_EDIT_BYTES)}. Download it, edit it locally, then use Replace to upload it.`,
+      );
+      setEditorFailureOperation("Load Editor File");
+      setEditorFailure(
+        createDiagnosticError("FILE_TOO_LARGE", {
+          component: "Code Editor",
+          operation: "Load Editor File",
+          reason: "Inline edit size limit exceeded",
+        }),
+      );
+      return;
+    }
+    setEditorLoading(true);
+    try {
+      let decoded: { content: string; lineSeparator: string };
+      if (DEMO) {
+        if (file.content === undefined) {
+          throw new Error("This demo file does not have editable text content.");
+        }
+        decoded = decodeEditableText(new TextEncoder().encode(file.content).buffer);
+      } else {
+        const downloaded = await fileApi.download(site.id, objectPath(file));
+        if (downloaded.blob.size > MAX_INLINE_EDIT_BYTES) {
+          setEditorIssue(
+            `This file exceeds the ${formatBytes(MAX_INLINE_EDIT_BYTES)} inline editing limit. Download it, edit it locally, then use Replace to upload it.`,
+          );
+          setEditorFailureOperation("Load Editor File");
+          setEditorFailure(
+            createDiagnosticError("FILE_TOO_LARGE", {
+              component: "Code Editor",
+              operation: "Load Editor File",
+              reason: "Inline edit size limit exceeded",
+            }),
+          );
+          return;
+        }
+        decoded = decodeEditableText(await downloaded.blob.arrayBuffer());
+      }
+      setEditorContent(decoded.content);
+      setEditorSavedContent(decoded.content);
+      setEditorLineSeparator(decoded.lineSeparator);
+      setEditorLoaded(true);
+    } catch (requestError) {
+      setEditorFailureOperation("Load Editor File");
+      setEditorFailure(requestError);
+    } finally {
+      setEditorLoading(false);
+    }
+  }
+
+  function closeEditor() {
+    if (editorDirty && !window.confirm("Discard your unsaved changes?")) return;
+    if (editorSaving) return;
+    setEditorFile(null);
+    setEditorLoaded(false);
+    setEditorFailure(null);
+    setEditorIssue("");
+  }
+
+  async function saveEditor() {
+    if (!editorFile || editorSaving || !editorDirty) return;
+    const targetPath = objectPath(editorFile);
+    if (!isEditableFilePath(targetPath)) {
+      setEditorIssue("This file type is no longer allowed for inline editing.");
+      setEditorFailureOperation("Save File");
+      setEditorFailure(
+        createDiagnosticError("UNSUPPORTED_FILE_TYPE", {
+          component: "Code Editor",
+          operation: "Save File",
+          reason: "Unsupported file type",
+        }),
+      );
+      return;
+    }
+    if (editorFile.size > MAX_INLINE_EDIT_BYTES) {
+      setEditorIssue(`Inline editing is limited to ${formatBytes(MAX_INLINE_EDIT_BYTES)}.`);
+      setEditorFailureOperation("Save File");
+      setEditorFailure(
+        createDiagnosticError("FILE_TOO_LARGE", {
+          component: "Code Editor",
+          operation: "Save File",
+          reason: "Inline edit size limit exceeded",
+        }),
+      );
+      return;
+    }
+    const bytes = new TextEncoder().encode(editorContent);
+    if (bytes.byteLength > MAX_INLINE_EDIT_BYTES) {
+      setEditorIssue(`Inline editing is limited to ${formatBytes(MAX_INLINE_EDIT_BYTES)} per saved file.`);
+      setEditorFailureOperation("Save File");
+      setEditorFailure(
+        createDiagnosticError("FILE_TOO_LARGE", {
+          component: "Code Editor",
+          operation: "Save File",
+          reason: "Inline edit size limit exceeded",
+        }),
+      );
+      return;
+    }
+    setEditorSaving(true);
+    setEditorSavePercent(0);
+    setEditorFailure(null);
+    setEditorIssue("");
+    const contentToSave = editorContent;
+    try {
+      const replacement = new File([bytes], editorFile.name, {
+        type: editorFile.mime || "text/plain;charset=utf-8",
+      });
+      if (DEMO) {
+        setSiteFiles((current) => ({
+          ...current,
+          [site.id]: (current[site.id] ?? initialFiles(site.id)).map((entry) =>
+            entry.kind === "file" && objectPath(entry) === targetPath
+              ? { ...entry, content: contentToSave, size: bytes.byteLength, modified: new Date().toISOString() }
+              : entry,
+          ),
+        }));
+      } else {
+        await fileApi.replace(site.id, replacement, targetPath, setEditorSavePercent);
+        refresh();
+      }
+      setEditorSavedContent(contentToSave);
+      setNotice(
+        DEMO
+          ? "Changes saved to local demo memory only. Nothing was uploaded."
+          : "File saved. This does not publish or deploy your website.",
+      );
+    } catch (requestError) {
+      setEditorFailureOperation("Save File");
+      setEditorFailure(requestError);
+      if (
+        typeof requestError === "object" &&
+        requestError !== null &&
+        "identifier" in requestError &&
+        requestError.identifier === "NETWORK_ERROR"
+      ) {
+        setEditorIssue(
+          "The connection ended before the save was confirmed. The server may have applied the replacement; your editor contents are retained. Check the file before trying another save.",
+        );
+      }
+    } finally {
+      setEditorSaving(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleting || busyRef.current) return;
     busyRef.current = true;
@@ -758,6 +979,17 @@ export default function FileManager() {
                             >
                               <Eye size={16} />
                             </button>
+                            {isEditableFilePath(objectPath(file)) && (
+                              <button
+                                className="secondary file-edit"
+                                aria-label={`Edit ${file.name}`}
+                                disabled={busy}
+                                onClick={() => void openEditor(file)}
+                              >
+                                <Code2 size={15} />
+                                Edit
+                              </button>
+                            )}
                             <button
                               className="icon-button"
                               aria-label={`Download ${file.name}`}
@@ -871,6 +1103,71 @@ export default function FileManager() {
           ) : (
             <pre>{previewContent}</pre>
           )}
+        </Modal>
+      )}
+
+      {editorFile && (
+        <Modal
+          title="Code editor"
+          className="code-editor-dialog"
+          onClose={closeEditor}
+          closeDisabled={editorLoading || editorSaving}
+        >
+          <div className="editor-file-heading">
+            <strong>{editorFile.name}</strong>
+            <code>{objectPath(editorFile)}</code>
+          </div>
+          {editorDirty && <p className="editor-unsaved" role="status">Unsaved changes</p>}
+          <p className="editor-conflict-note">
+            Simultaneous editors are not conflict-protected. A later save may overwrite another editor's changes.
+          </p>
+          {editorLoading && <p role="status">Loading file contents…</p>}
+          {editorIssue && <p className="editor-issue" role="alert">{editorIssue}</p>}
+          {editorFailure !== null && (
+            <ErrorDisplay
+              error={editorFailure}
+              context={{
+                identifier: hasDiagnosticCode(editorFailure)
+                  ? undefined
+                  : editorFailureOperation === "Save File"
+                    ? "FILE_REPLACE_FAILED"
+                    : "INVALID_API_RESPONSE",
+                component: "Code Editor",
+                operation: editorFailureOperation,
+                reason: editorFailureOperation === "Save File" ? "Save failed" : "Download failed",
+                retryable: editorFailureOperation !== "Save File",
+              }}
+              onRetry={editorFailureOperation === "Load Editor File" ? () => void openEditor(editorFile) : undefined}
+              retryLabel="Retry download"
+            />
+          )}
+          {editorLoaded && (
+            <Suspense fallback={<p role="status">Loading editor tools…</p>}>
+              <CodeEditor
+                path={objectPath(editorFile)}
+                content={editorContent}
+                lineSeparator={editorLineSeparator}
+                onChange={setEditorContent}
+                onSave={() => void saveEditor()}
+              />
+            </Suspense>
+          )}
+          {editorSaving && (
+            <div className="editor-save-progress" role="status">
+              <span>Saving file… {editorSavePercent}%</span>
+              <progress max={100} value={editorSavePercent} />
+            </div>
+          )}
+          <div className="modal-actions editor-actions">
+            <button type="button" className="secondary" disabled={editorLoading || editorSaving} onClick={closeEditor}>
+              {editorDirty ? "Cancel" : "Close"}
+            </button>
+            {editorLoaded && (
+              <button type="button" className="primary" disabled={!editorDirty || editorSaving} onClick={() => void saveEditor()}>
+                {editorSaving ? "Saving…" : "Save"}
+              </button>
+            )}
+          </div>
         </Modal>
       )}
 

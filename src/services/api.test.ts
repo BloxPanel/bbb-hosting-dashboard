@@ -402,6 +402,63 @@ describe("confirmed API requests", () => {
       redirect: "error",
     });
   });
+  it("replaces a project file with raw UTF-8 bytes through the authenticated PUT route", async () => {
+    let observed: {
+      method: string;
+      url: string;
+      withCredentials: boolean;
+      body: unknown;
+    };
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      class {
+        method = "";
+        url = "";
+        withCredentials = false;
+        body: unknown;
+        upload: { onprogress: ((event: ProgressEvent) => void) | null } = {
+          onprogress: null,
+        };
+        onload: (() => void) | null = null;
+        status = 200;
+        responseURL = "";
+        responseText = "";
+        open(method: string, url: string | URL) {
+          this.method = method;
+          this.url = String(url);
+        }
+        send(body: unknown) {
+          this.body = body;
+          this.responseURL = this.url;
+          this.responseText = JSON.stringify({
+            success: true,
+            file: {
+              path: "assets/site.css",
+              size: 20,
+              content_type: "text/css",
+            },
+          });
+          observed = {
+            method: this.method,
+            url: this.url,
+            withCredentials: this.withCredentials,
+            body,
+          };
+          queueMicrotask(() => this.onload?.());
+        }
+      },
+    );
+    const file = new File(["body { color: red; }"], "site.css", { type: "text/css" });
+    const progress = vi.fn();
+    await files.replace("project_1", file, "assets/site.css", progress);
+    expect(observed!.method).toBe("PUT");
+    expect(observed!.url).toBe(
+      origin + "/v1/projects/project_1/files/assets/site.css",
+    );
+    expect(observed!.withCredentials).toBe(true);
+    expect(observed!.body).toBe(file);
+    expect(observed!.body).not.toBeInstanceOf(FormData);
+  });
   it("maps file API session expiration and permission errors to safe messages", async () => {
     const expired = vi.fn();
     const eventTarget = new EventTarget();

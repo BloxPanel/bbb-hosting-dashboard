@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_FILE_BYTES,
+  MAX_INLINE_EDIT_BYTES,
   MAX_PROJECT_FILES,
   MAX_STORAGE_BYTES,
+  decodeEditableText,
+  isEditableFilePath,
   parseFilePage,
   parseStorage,
   validateFilePath,
@@ -141,6 +144,47 @@ describe("project file API contracts", () => {
     expect((failure as Error).message).not.toContain("customer-private");
     expect((failure as Error & { report: string }).report).not.toContain(
       "secret.html",
+    );
+  });
+});
+
+describe("inline editor file safety", () => {
+  it("limits inline editing and allows only text website formats", () => {
+    expect(MAX_INLINE_EDIT_BYTES).toBe(1024 * 1024);
+    for (const filename of [
+      "index.html",
+      "legacy.htm",
+      "site.css",
+      "app.js",
+      "module.mjs",
+      "settings.json",
+      "manifest.webmanifest",
+      "notes.txt",
+      "readme.md",
+      "feed.xml",
+      "data.csv",
+    ]) {
+      expect(isEditableFilePath(filename)).toBe(true);
+    }
+    for (const filename of ["photo.png", "font.woff2", "manual.pdf", "module.wasm", "image.svg", "bundle.map"]) {
+      expect(isEditableFilePath(filename)).toBe(false);
+    }
+  });
+
+  it("preserves UTF-8 BOM and CRLF line endings without normalizing content", () => {
+    const bytes = new TextEncoder().encode("\uFEFFfirst\r\nsecond");
+    expect(decodeEditableText(bytes.buffer)).toEqual({
+      content: "\uFEFFfirst\r\nsecond",
+      lineSeparator: "\r\n",
+    });
+  });
+
+  it("rejects malformed UTF-8 and mixed line endings", () => {
+    expect(() => decodeEditableText(new Uint8Array([0xc3, 0x28]).buffer)).toThrow(
+      /unexpected response/i,
+    );
+    expect(() => decodeEditableText(new TextEncoder().encode("a\r\nb\nc").buffer)).toThrow(
+      /unexpected response/i,
     );
   });
 });

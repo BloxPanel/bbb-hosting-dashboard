@@ -1078,6 +1078,14 @@ form .primary {
   padding: 7px 10px;
   font-size: 11px;
 }
+.file-edit {
+  min-height: 34px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
 .file-pagination {
   display: flex;
   align-items: center;
@@ -1289,6 +1297,74 @@ dialog::backdrop {
 }
 dialog p {
   font-size: 12px;
+}
+.code-editor-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(1100px, calc(100% - 24px));
+  height: min(86vh, 900px);
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+}
+.code-editor-dialog > .row {
+  flex: 0 0 auto;
+}
+.editor-file-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.editor-file-heading strong,
+.editor-file-heading code {
+  overflow-wrap: anywhere;
+}
+.editor-file-heading code {
+  color: #9dafc3;
+  font-size: 11px;
+  text-align: right;
+}
+.editor-unsaved,
+.editor-conflict-note,
+.editor-issue {
+  margin: 0;
+  font-size: 12px;
+}
+.editor-unsaved {
+  color: #edc16b;
+}
+.editor-conflict-note {
+  color: #9dafc3;
+}
+.editor-issue {
+  border-left: 3px solid #e6af45;
+  background: #2b281f;
+  color: #f1dca2;
+  padding: 10px 12px;
+}
+.code-editor {
+  min-height: 280px;
+  height: min(58vh, 620px);
+  border: 1px solid #354257;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.code-editor .cm-editor {
+  height: 100%;
+}
+.editor-save-progress {
+  flex: 0 0 auto;
+  color: #c9d5e4;
+  font-size: 12px;
+}
+.editor-save-progress progress {
+  margin-top: 6px;
+}
+.editor-actions {
+  flex: 0 0 auto;
+  margin-top: auto;
 }
 .modal-actions {
   display: flex;
@@ -1590,6 +1666,22 @@ button:disabled {
   }
 }
 @media (max-width: 700px) {
+  .code-editor-dialog[open] {
+    padding: 16px;
+    height: calc(100dvh - 24px);
+  }
+  .editor-file-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .editor-file-heading code {
+    text-align: left;
+  }
+  .code-editor {
+    min-height: 220px;
+    height: 52vh;
+  }
   .shell aside,
   .collapsed aside {
     width: 244px;
