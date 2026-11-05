@@ -193,8 +193,14 @@ export default function FileManager() {
   const [deleteError, setDeleteError] = useState<unknown | null>(null);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const editorCloseButton = useRef<HTMLButtonElement>(null);
+  const editorSaveButton = useRef<HTMLButtonElement>(null);
   const replaceTarget = useRef<HostedFile | null>(null);
   const editorDirty = editorFile !== null && editorContent !== editorSavedContent;
+  const editorSize = useMemo(
+    () => new TextEncoder().encode(editorContent).byteLength,
+    [editorContent],
+  );
   const navigationBlocker = useBlocker(editorDirty);
 
   useEffect(() => {
@@ -1140,8 +1146,7 @@ export default function FileManager() {
           className="code-editor-dialog"
           onClose={closeEditor}
           closeDisabled={editorLoading || editorSaving}
-        >
-          <div className="editor-dialog-content">
+          headerContent={
             <header className="editor-file-heading">
               <div className="editor-file-identity">
                 <FileText size={19} aria-hidden="true" />
@@ -1152,9 +1157,12 @@ export default function FileManager() {
               </div>
               <div className="editor-header-meta">
                 <span className="editor-language">{editorLanguage(editorFile)}</span>
-                {editorDirty && <span className="editor-unsaved" role="status">Unsaved changes</span>}
+                {editorDirty && <span className="editor-unsaved" aria-hidden="true">Unsaved changes</span>}
               </div>
             </header>
+          }
+        >
+          <div className="editor-dialog-content">
             <p className="editor-conflict-note">
               Simultaneous editors are not conflict-protected; another save may be overwritten.
             </p>
@@ -1194,26 +1202,37 @@ export default function FileManager() {
                     onChange={setEditorContent}
                     onCursorChange={setEditorPosition}
                     onSave={() => void saveEditor()}
+                    onEditorExit={() => {
+                      if (editorSaveButton.current && !editorSaveButton.current.disabled) {
+                        editorSaveButton.current.focus();
+                      } else {
+                        editorCloseButton.current?.focus();
+                      }
+                    }}
                   />
                 </Suspense>
               )}
             </div>
             <footer className="editor-footer">
-              <div className="editor-statusbar" role="status" aria-live="polite" aria-label="Editor status">
+              <div className="editor-statusbar" role="group" aria-label="Editor status">
                 <span>Ln {editorPosition.line}, Col {editorPosition.column}</span>
                 <span>{editorLanguage(editorFile)}</span>
                 <span>UTF-8</span>
-                <span>{formatBytes(new TextEncoder().encode(editorContent).byteLength)}</span>
+                <span aria-label={`File size ${formatBytes(editorSize)}`}>
+                  {formatBytes(editorSize)}
+                </span>
                 <span className={editorDirty ? "status-unsaved" : "status-saved"}>
-                  {editorSaving ? `Saving ${editorSavePercent}%` : editorDirty ? "Unsaved" : "Saved"}
+                  <span role="status" aria-live="polite">
+                    {editorSaving ? `Saving ${editorSavePercent}%` : editorDirty ? "Unsaved" : "Saved"}
+                  </span>
                 </span>
               </div>
               {editorSaving && <progress className="editor-save-progress" max={100} value={editorSavePercent} aria-label="Save progress" />}
               <div className="editor-actions">
-                <button type="button" className="secondary" disabled={editorLoading || editorSaving} onClick={closeEditor}>
+                <button ref={editorCloseButton} type="button" className="secondary" disabled={editorLoading || editorSaving} onClick={closeEditor}>
                   Close
                 </button>
-                <button type="button" className="primary" disabled={!editorDirty || editorSaving || !editorLoaded} onClick={() => void saveEditor()}>
+                <button ref={editorSaveButton} type="button" className="primary" disabled={!editorDirty || editorSaving || !editorLoaded} onClick={() => void saveEditor()}>
                   {editorSaving ? "Saving…" : "Save"}
                 </button>
               </div>

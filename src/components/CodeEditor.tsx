@@ -7,8 +7,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { basicSetup, EditorView } from "codemirror";
-import { EditorState } from "@codemirror/state";
-import { Compartment } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -33,7 +32,7 @@ const bbbHighlightStyle = HighlightStyle.define([
   { tag: [tags.typeName, tags.className, tags.namespace], color: "#d7c18b" },
   { tag: [tags.tagName, tags.heading], color: "#d18d9c" },
   { tag: [tags.operator, tags.punctuation, tags.bracket], color: "#9baabd" },
-  { tag: tags.comment, color: "#748398", fontStyle: "italic" },
+  { tag: tags.comment, color: "#8997aa", fontStyle: "italic" },
   { tag: tags.meta, color: "#8292a6" },
   { tag: tags.invalid, color: "#f1e7e8", backgroundColor: "#633c47" },
 ]);
@@ -58,6 +57,7 @@ export function CodeEditor({
   onCursorChange,
   onToggleWrap,
   onSave,
+  onEditorExit,
 }: {
   path: string;
   content: string;
@@ -67,6 +67,7 @@ export function CodeEditor({
   onCursorChange: (position: { line: number; column: number }) => void;
   onToggleWrap: () => void;
   onSave: () => void;
+  onEditorExit: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const initialContent = useRef(content).current;
@@ -76,9 +77,11 @@ export function CodeEditor({
   const saveRef = useRef(onSave);
   const changeRef = useRef(onChange);
   const cursorRef = useRef(onCursorChange);
+  const exitRef = useRef(onEditorExit);
   saveRef.current = onSave;
   changeRef.current = onChange;
   cursorRef.current = onCursorChange;
+  exitRef.current = onEditorExit;
 
   useEffect(() => {
     if (!host.current) return;
@@ -96,9 +99,19 @@ export function CodeEditor({
           highlightActiveLineGutter(),
           syntaxHighlighting(bbbHighlightStyle),
           wrapping.of(initialWrap ? EditorView.lineWrapping : []),
-          EditorView.contentAttributes.of({ "aria-label": `Code editor for ${path}` }),
+          EditorView.contentAttributes.of({
+            "aria-label": `Code editor for ${path}`,
+            "aria-describedby": "editor-keyboard-help",
+          }),
           keymap.of([
             indentWithTab,
+            {
+              key: "F6",
+              run: () => {
+                exitRef.current();
+                return true;
+              },
+            },
             {
               key: "Mod-s",
               preventDefault: true,
@@ -123,7 +136,10 @@ export function CodeEditor({
               backgroundColor: "#111821",
               fontSize: "13px",
             },
-            "&.cm-focused": { outline: "none" },
+            "&.cm-focused": {
+              outline: "2px solid #4cbbd5",
+              outlineOffset: "-2px",
+            },
             ".cm-scroller": {
               overflow: "auto",
               fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace",
@@ -197,7 +213,9 @@ export function CodeEditor({
           <WrapText size={15} />
           <span>Wrap lines</span>
         </button>
-        <span className="editor-tab-setting">Indent: tabs</span>
+        <span className="editor-tab-setting" id="editor-keyboard-help">
+          Tab to indent · F6 for actions
+        </span>
       </div>
       <div className="code-editor" ref={host} />
     </section>

@@ -38,12 +38,14 @@ export function Modal({
   onClose,
   closeDisabled = false,
   className = "",
+  headerContent,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeDisabled?: boolean;
   className?: string;
+  headerContent?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -62,7 +64,16 @@ export function Modal({
       aria-labelledby="modal-title"
     >
       <div className="row between">
-        <h2 id="modal-title">{title}</h2>
+        {headerContent ? (
+          <>
+            <h2 id="modal-title" className="sr-only">
+              {title}
+            </h2>
+            {headerContent}
+          </>
+        ) : (
+          <h2 id="modal-title">{title}</h2>
+        )}
         <button
           className="icon-button"
           aria-label="Close dialog"

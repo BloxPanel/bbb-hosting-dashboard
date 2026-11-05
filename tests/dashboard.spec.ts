@@ -217,6 +217,10 @@ test("demo code editor edits supported text locally and protects unsaved work", 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel(`Code editor for ${name}`)).toBeVisible({ timeout: 10000 });
     await expect(dialog.locator(".cm-gutterElement:visible").first()).toBeVisible();
+    await expect(dialog.locator(".cm-content")).toHaveAttribute(
+      "aria-describedby",
+      "editor-keyboard-help",
+    );
     if (name === "index.html") {
       await dialog.locator(".cm-content").press("Tab");
       expect(
@@ -238,6 +242,7 @@ test("demo code editor edits supported text locally and protects unsaved work", 
     expect(viewport).not.toBeNull();
     expect(bounds!.width).toBeGreaterThan(viewport!.width * 0.85);
     expect(bounds!.height).toBeGreaterThan(viewport!.height * 0.8);
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(dialog.locator(".cm-line span").first()).toBeVisible();
     const syntaxColor = await dialog
       .locator(".cm-line span")
@@ -245,6 +250,12 @@ test("demo code editor edits supported text locally and protects unsaved work", 
       .evaluate((element) => getComputedStyle(element).color);
     expect(syntaxColor).not.toBe("rgb(213, 222, 234)");
     await dialog.locator(".cm-content").fill(content);
+    await expect(dialog.locator(".cm-editor")).toHaveCSS("outline-style", "solid");
+    if (name === "index.html") {
+      await dialog.locator(".cm-content").press("F6");
+      await expect(dialog.locator(".editor-actions button.primary")).toBeFocused();
+      await dialog.locator(".cm-content").click();
+    }
     await dialog.locator(".cm-content").press("Control+End");
     await expect(dialog.locator(".editor-statusbar")).toContainText(
       `Ln 1, Col ${content.length + 1}`,
