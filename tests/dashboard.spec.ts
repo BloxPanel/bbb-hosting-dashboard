@@ -215,12 +215,43 @@ test("demo code editor edits supported text locally and protects unsaved work", 
   ]) {
     await page.getByRole("button", { name: `Edit ${name}` }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByLabel("Editor contents")).toBeVisible();
+    await expect(dialog.getByLabel(`Code editor for ${name}`)).toBeVisible({ timeout: 10000 });
     await expect(dialog.locator(".cm-gutterElement:visible").first()).toBeVisible();
-      if (name === "index.html")
-        await expect(dialog.locator(".cm-line span").first()).toBeVisible();
-      await dialog.locator(".cm-content").fill(content);
+    if (name === "index.html") {
+      await dialog.locator(".cm-content").press("Tab");
+      expect(
+        await dialog.locator(".cm-content").evaluate((element) => element.textContent),
+      ).toContain("\t");
+    }
+    const wrapToggle = dialog.getByRole("button", { name: "Toggle line wrapping" });
+    await expect(wrapToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(dialog.locator(".cm-line").first()).toHaveCSS("white-space", "pre");
+    await wrapToggle.click();
+    await expect(wrapToggle).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await dialog.locator(".cm-line").first().evaluate((element) => getComputedStyle(element).whiteSpace),
+    ).not.toBe("pre");
+    await wrapToggle.click();
+    const bounds = await dialog.boundingBox();
+    const viewport = page.viewportSize();
+    expect(bounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThan(viewport!.width * 0.85);
+    expect(bounds!.height).toBeGreaterThan(viewport!.height * 0.8);
+    await expect(dialog.locator(".cm-line span").first()).toBeVisible();
+    const syntaxColor = await dialog
+      .locator(".cm-line span")
+      .first()
+      .evaluate((element) => getComputedStyle(element).color);
+    expect(syntaxColor).not.toBe("rgb(213, 222, 234)");
+    await dialog.locator(".cm-content").fill(content);
+    await dialog.locator(".cm-content").press("Control+End");
+    await expect(dialog.locator(".editor-statusbar")).toContainText(
+      `Ln 1, Col ${content.length + 1}`,
+    );
     await expect(dialog).toContainText("Unsaved changes");
+    await expect(dialog.locator(".editor-statusbar")).toContainText("Unsaved");
+    await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await page.keyboard.press("Control+f");
     await expect(dialog.locator(".cm-search")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -229,6 +260,8 @@ test("demo code editor edits supported text locally and protects unsaved work", 
       "Changes saved to local demo memory only",
     );
     await expect(dialog).not.toContainText("Unsaved changes");
+    await expect(dialog.locator(".editor-statusbar")).toContainText("Saved");
+    await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Close dialog" }).click();
   }
 

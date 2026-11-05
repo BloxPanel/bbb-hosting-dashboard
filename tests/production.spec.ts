@@ -243,6 +243,8 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
   ];
   const mutations: Array<{ method: string; path: string; bodyLength: number }> = [];
   let failEditorSave = false;
+  let editorSaveGate: Promise<void> | null = null;
+  let onEditorSaveReceived: (() => void) | null = null;
   await page.route("**/v1/projects/project-files/files**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -290,6 +292,12 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
       path,
       bodyLength: body?.byteLength ?? 0,
     });
+    if (request.method() === "PUT" && path === "index.html" && editorSaveGate) {
+      onEditorSaveReceived?.();
+      await editorSaveGate;
+      editorSaveGate = null;
+      onEditorSaveReceived = null;
+    }
     if (request.method() === "POST" && path === "upload-error.html") {
       await route.fulfill({
         status: 411,
@@ -448,6 +456,27 @@ test("project file manager lists, uploads, replaces and deletes with browser ses
     bodyLength: Buffer.byteLength("<h1>Saved from editor</h1>"),
   });
   await expect(page.getByLabel("Storage usage")).not.toHaveText(storageBeforeEditorSave);
+
+  await editor.locator(".cm-content").fill("<h1>Saving in progress</h1>");
+  let releaseEditorSave: (() => void) | null = null;
+  let notifyEditorSaveReceived: (() => void) | null = null;
+  const editorSaveReceived = new Promise<void>((resolve) => {
+    notifyEditorSaveReceived = resolve;
+  });
+  editorSaveGate = new Promise<void>((resolve) => {
+    releaseEditorSave = resolve;
+  });
+  onEditorSaveReceived = () => notifyEditorSaveReceived?.();
+  const saveButton = editor.locator(".editor-actions button.primary");
+  const mutationCountBeforePendingSave = mutations.length;
+  await saveButton.click();
+  await editorSaveReceived;
+  await expect(editor.locator(".editor-statusbar")).toContainText("Saving");
+  await expect(saveButton).toBeDisabled();
+  expect(mutations).toHaveLength(mutationCountBeforePendingSave + 1);
+  releaseEditorSave?.();
+  await expect(page.getByRole("alert")).toContainText("File saved.");
+  await expect(editor.locator(".editor-statusbar")).toContainText("Saved");
 
   await editor.locator(".cm-content").fill("<h1>Retained after failure</h1>");
   failEditorSave = true;

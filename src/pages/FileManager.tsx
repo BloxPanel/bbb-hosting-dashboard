@@ -69,6 +69,30 @@ function objectPath(file: HostedFile): string {
   return `${file.path === "/" ? "" : file.path.slice(1)}${file.name}`;
 }
 
+function editorLanguage(file: HostedFile): string {
+  const extension = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
+  const languages: Readonly<Record<string, string>> = {
+    css: "CSS",
+    csv: "CSV",
+    htm: "HTML",
+    html: "HTML",
+    js: "JavaScript",
+    json: "JSON",
+    md: "Markdown",
+    mjs: "JavaScript",
+    txt: "Plain text",
+    webmanifest: "JSON",
+    xml: "XML",
+  };
+  return languages[extension] ?? "Plain text";
+}
+
+function editorDirectory(file: HostedFile): string {
+  const path = objectPath(file);
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? "" : path.slice(0, slash + 1);
+}
+
 function fileDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -160,6 +184,8 @@ export default function FileManager() {
   const [editorLoaded, setEditorLoaded] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorSavePercent, setEditorSavePercent] = useState(0);
+  const [editorPosition, setEditorPosition] = useState({ line: 1, column: 1 });
+  const [editorWrap, setEditorWrap] = useState(false);
   const [editorFailure, setEditorFailure] = useState<unknown | null>(null);
   const [editorFailureOperation, setEditorFailureOperation] = useState<"Load Editor File" | "Save File">("Load Editor File");
   const [editorIssue, setEditorIssue] = useState("");
@@ -517,6 +543,8 @@ export default function FileManager() {
     setEditorFile(file);
     setEditorContent("");
     setEditorSavedContent("");
+    setEditorPosition({ line: 1, column: 1 });
+    setEditorWrap(false);
     setEditorLoaded(false);
     setEditorLineSeparator("\n");
     setEditorFailure(null);
@@ -1108,65 +1136,88 @@ export default function FileManager() {
 
       {editorFile && (
         <Modal
-          title="Code editor"
+          title="Edit file"
           className="code-editor-dialog"
           onClose={closeEditor}
           closeDisabled={editorLoading || editorSaving}
         >
-          <div className="editor-file-heading">
-            <strong>{editorFile.name}</strong>
-            <code>{objectPath(editorFile)}</code>
-          </div>
-          {editorDirty && <p className="editor-unsaved" role="status">Unsaved changes</p>}
-          <p className="editor-conflict-note">
-            Simultaneous editors are not conflict-protected. A later save may overwrite another editor's changes.
-          </p>
-          {editorLoading && <p role="status">Loading file contents…</p>}
-          {editorIssue && <p className="editor-issue" role="alert">{editorIssue}</p>}
-          {editorFailure !== null && (
-            <ErrorDisplay
-              error={editorFailure}
-              context={{
-                identifier: hasDiagnosticCode(editorFailure)
-                  ? undefined
-                  : editorFailureOperation === "Save File"
-                    ? "FILE_REPLACE_FAILED"
-                    : "INVALID_API_RESPONSE",
-                component: "Code Editor",
-                operation: editorFailureOperation,
-                reason: editorFailureOperation === "Save File" ? "Save failed" : "Download failed",
-                retryable: editorFailureOperation !== "Save File",
-              }}
-              onRetry={editorFailureOperation === "Load Editor File" ? () => void openEditor(editorFile) : undefined}
-              retryLabel="Retry download"
-            />
-          )}
-          {editorLoaded && (
-            <Suspense fallback={<p role="status">Loading editor tools…</p>}>
-              <CodeEditor
-                path={objectPath(editorFile)}
-                content={editorContent}
-                lineSeparator={editorLineSeparator}
-                onChange={setEditorContent}
-                onSave={() => void saveEditor()}
-              />
-            </Suspense>
-          )}
-          {editorSaving && (
-            <div className="editor-save-progress" role="status">
-              <span>Saving file… {editorSavePercent}%</span>
-              <progress max={100} value={editorSavePercent} />
-            </div>
-          )}
-          <div className="modal-actions editor-actions">
-            <button type="button" className="secondary" disabled={editorLoading || editorSaving} onClick={closeEditor}>
-              {editorDirty ? "Cancel" : "Close"}
-            </button>
-            {editorLoaded && (
-              <button type="button" className="primary" disabled={!editorDirty || editorSaving} onClick={() => void saveEditor()}>
-                {editorSaving ? "Saving…" : "Save"}
-              </button>
+          <div className="editor-dialog-content">
+            <header className="editor-file-heading">
+              <div className="editor-file-identity">
+                <FileText size={19} aria-hidden="true" />
+                <div className="editor-file-name">
+                  <strong>{editorFile.name}</strong>
+                  {editorDirectory(editorFile) && <code>{editorDirectory(editorFile)}</code>}
+                </div>
+              </div>
+              <div className="editor-header-meta">
+                <span className="editor-language">{editorLanguage(editorFile)}</span>
+                {editorDirty && <span className="editor-unsaved" role="status">Unsaved changes</span>}
+              </div>
+            </header>
+            <p className="editor-conflict-note">
+              Simultaneous editors are not conflict-protected; another save may be overwritten.
+            </p>
+            {editorIssue && <p className="editor-issue" role="alert">{editorIssue}</p>}
+            {(editorFailure !== null || editorLoading) && (
+              <div className="editor-feedback">
+                {editorLoading && <p role="status">Loading file contents…</p>}
+                {editorFailure !== null && (
+                  <ErrorDisplay
+                    error={editorFailure}
+                    context={{
+                      identifier: hasDiagnosticCode(editorFailure)
+                        ? undefined
+                        : editorFailureOperation === "Save File"
+                          ? "FILE_REPLACE_FAILED"
+                          : "INVALID_API_RESPONSE",
+                      component: "Code Editor",
+                      operation: editorFailureOperation,
+                      reason: editorFailureOperation === "Save File" ? "Save failed" : "Download failed",
+                      retryable: editorFailureOperation !== "Save File",
+                    }}
+                    onRetry={editorFailureOperation === "Load Editor File" ? () => void openEditor(editorFile) : undefined}
+                    retryLabel="Retry download"
+                  />
+                )}
+              </div>
             )}
+            <div className="editor-workspace">
+              {editorLoaded && (
+                <Suspense fallback={<p className="editor-loading-tools" role="status">Loading editor tools…</p>}>
+                  <CodeEditor
+                    path={objectPath(editorFile)}
+                    content={editorContent}
+                    lineSeparator={editorLineSeparator}
+                    wrap={editorWrap}
+                    onToggleWrap={() => setEditorWrap((current) => !current)}
+                    onChange={setEditorContent}
+                    onCursorChange={setEditorPosition}
+                    onSave={() => void saveEditor()}
+                  />
+                </Suspense>
+              )}
+            </div>
+            <footer className="editor-footer">
+              <div className="editor-statusbar" role="status" aria-live="polite" aria-label="Editor status">
+                <span>Ln {editorPosition.line}, Col {editorPosition.column}</span>
+                <span>{editorLanguage(editorFile)}</span>
+                <span>UTF-8</span>
+                <span>{formatBytes(new TextEncoder().encode(editorContent).byteLength)}</span>
+                <span className={editorDirty ? "status-unsaved" : "status-saved"}>
+                  {editorSaving ? `Saving ${editorSavePercent}%` : editorDirty ? "Unsaved" : "Saved"}
+                </span>
+              </div>
+              {editorSaving && <progress className="editor-save-progress" max={100} value={editorSavePercent} aria-label="Save progress" />}
+              <div className="editor-actions">
+                <button type="button" className="secondary" disabled={editorLoading || editorSaving} onClick={closeEditor}>
+                  Close
+                </button>
+                <button type="button" className="primary" disabled={!editorDirty || editorSaving || !editorLoaded} onClick={() => void saveEditor()}>
+                  {editorSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </footer>
           </div>
         </Modal>
       )}
