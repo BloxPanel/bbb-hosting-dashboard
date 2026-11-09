@@ -1146,10 +1146,11 @@ export default function FileManager() {
           className="code-editor-dialog"
           onClose={closeEditor}
           closeDisabled={editorLoading || editorSaving}
-          headerContent={
+        >
+          <div className="editor-dialog-content">
             <header className="editor-file-heading">
               <div className="editor-file-identity">
-                <FileText size={19} aria-hidden="true" />
+                <Code2 size={19} aria-hidden="true" />
                 <div className="editor-file-name">
                   <strong>{editorFile.name}</strong>
                   {editorDirectory(editorFile) && <code>{editorDirectory(editorFile)}</code>}
@@ -1157,12 +1158,9 @@ export default function FileManager() {
               </div>
               <div className="editor-header-meta">
                 <span className="editor-language">{editorLanguage(editorFile)}</span>
-                {editorDirty && <span className="editor-unsaved" aria-hidden="true">Unsaved changes</span>}
+                {editorDirty && <span className="editor-unsaved" role="status">Unsaved changes</span>}
               </div>
             </header>
-          }
-        >
-          <div className="editor-dialog-content">
             <p className="editor-conflict-note">
               Simultaneous editors are not conflict-protected; another save may be overwritten.
             </p>
@@ -1203,11 +1201,10 @@ export default function FileManager() {
                     onCursorChange={setEditorPosition}
                     onSave={() => void saveEditor()}
                     onEditorExit={() => {
-                      if (editorSaveButton.current && !editorSaveButton.current.disabled) {
-                        editorSaveButton.current.focus();
-                      } else {
-                        editorCloseButton.current?.focus();
-                      }
+                      const action = [editorCloseButton.current, editorSaveButton.current].find(
+                        (button) => button && !button.disabled,
+                      );
+                      action?.focus();
                     }}
                   />
                 </Suspense>

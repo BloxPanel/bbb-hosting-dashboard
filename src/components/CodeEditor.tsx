@@ -7,7 +7,8 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { basicSetup, EditorView } from "codemirror";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { searchPanelOpen } from "@codemirror/search";
 import {
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -70,6 +71,7 @@ export function CodeEditor({
   onEditorExit: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const wrapButton = useRef<HTMLButtonElement>(null);
   const initialContent = useRef(content).current;
   const initialWrap = useRef(wrap).current;
   const wrapping = useRef(new Compartment()).current;
@@ -103,15 +105,24 @@ export function CodeEditor({
             "aria-label": `Code editor for ${path}`,
             "aria-describedby": "editor-keyboard-help",
           }),
+          Prec.highest(
+            keymap.of([
+              {
+                key: "Escape",
+                run: (view) => {
+                  if (searchPanelOpen(view.state)) return false;
+                  if (view.contentDOM === document.activeElement) {
+                    wrapButton.current?.focus();
+                    return true;
+                  }
+                  exitRef.current();
+                  return true;
+                },
+              },
+            ]),
+          ),
           keymap.of([
             indentWithTab,
-            {
-              key: "F6",
-              run: () => {
-                exitRef.current();
-                return true;
-              },
-            },
             {
               key: "Mod-s",
               preventDefault: true,
@@ -136,10 +147,7 @@ export function CodeEditor({
               backgroundColor: "#111821",
               fontSize: "13px",
             },
-            "&.cm-focused": {
-              outline: "2px solid #4cbbd5",
-              outlineOffset: "-2px",
-            },
+            "&.cm-focused": { outline: "2px solid #4cbbd5", outlineOffset: "-2px" },
             ".cm-scroller": {
               overflow: "auto",
               fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace",
@@ -162,20 +170,6 @@ export function CodeEditor({
               color: "#e5c785 !important",
               backgroundColor: "#344333",
               outline: "1px solid #536a4c",
-            },
-            ".cm-panels": {
-              backgroundColor: "#19222d",
-              color: "#d5deea",
-              borderColor: "#2d3b4b",
-            },
-            ".cm-panels input, .cm-panels button": {
-              borderColor: "#405068",
-              borderRadius: "4px",
-              backgroundColor: "#111821",
-              color: "#d5deea",
-            },
-            ".cm-panels button:hover": {
-              backgroundColor: "#263445",
             },
           }),
         ],
@@ -203,18 +197,25 @@ export function CodeEditor({
     <section className="code-editor-panel" aria-label="Source editor">
       <div className="editor-toolbar">
         <button
+          ref={wrapButton}
           type="button"
           className="editor-wrap-toggle"
           aria-label="Toggle line wrapping"
           aria-pressed={wrap}
           title="Toggle line wrapping"
           onClick={onToggleWrap}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              exitRef.current();
+            }
+          }}
         >
           <WrapText size={15} />
           <span>Wrap lines</span>
         </button>
         <span className="editor-tab-setting" id="editor-keyboard-help">
-          Tab to indent · F6 for actions
+          Tab/Shift+Tab indent · Esc closes Find; editor Esc {"->"} Wrap lines {"->"} Esc {"->"} Close · Ctrl+S save · Ctrl+F find
         </span>
       </div>
       <div className="code-editor" ref={host} />

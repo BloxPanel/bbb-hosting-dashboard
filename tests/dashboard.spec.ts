@@ -226,6 +226,27 @@ test("demo code editor edits supported text locally and protects unsaved work", 
       expect(
         await dialog.locator(".cm-content").evaluate((element) => element.textContent),
       ).toContain("\t");
+      const originalViewport = page.viewportSize()!;
+      for (const viewport of [
+        { width: 1366, height: 768 },
+        { width: 1280, height: 720 },
+        { width: 1920, height: 1080 },
+        { width: 768, height: 1024 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(viewport);
+        const bounds = await dialog.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(Math.abs(bounds!.x + bounds!.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        ).toBe(true);
+      }
+      await page.setViewportSize(originalViewport);
     }
     const wrapToggle = dialog.getByRole("button", { name: "Toggle line wrapping" });
     await expect(wrapToggle).toHaveAttribute("aria-pressed", "false");
@@ -242,20 +263,15 @@ test("demo code editor edits supported text locally and protects unsaved work", 
     expect(viewport).not.toBeNull();
     expect(bounds!.width).toBeGreaterThan(viewport!.width * 0.85);
     expect(bounds!.height).toBeGreaterThan(viewport!.height * 0.8);
-    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await expect(dialog.locator(".cm-line span").first()).toBeVisible();
-    const syntaxColor = await dialog
-      .locator(".cm-line span")
-      .first()
-      .evaluate((element) => getComputedStyle(element).color);
-    expect(syntaxColor).not.toBe("rgb(213, 222, 234)");
-    await dialog.locator(".cm-content").fill(content);
-    await expect(dialog.locator(".cm-editor")).toHaveCSS("outline-style", "solid");
     if (name === "index.html") {
-      await dialog.locator(".cm-content").press("F6");
-      await expect(dialog.locator(".editor-actions button.primary")).toBeFocused();
-      await dialog.locator(".cm-content").click();
+      await expect(dialog.locator(".cm-line span").first()).toBeVisible();
+      const syntaxColor = await dialog
+        .locator(".cm-line span")
+        .first()
+        .evaluate((element) => getComputedStyle(element).color);
+      expect(syntaxColor).not.toBe("rgb(213, 222, 234)");
     }
+    await dialog.locator(".cm-content").fill(content);
     await dialog.locator(".cm-content").press("Control+End");
     await expect(dialog.locator(".editor-statusbar")).toContainText(
       `Ln 1, Col ${content.length + 1}`,
@@ -329,4 +345,157 @@ test("demo code editor edits supported text locally and protects unsaved work", 
   ).toBe(true);
   await sizeDialog.getByRole("button", { name: "Close dialog" }).click();
   expect(fileApiRequests).toEqual([]);
+});
+
+test("CodeMirror search, replace and keyboard navigation stay usable", async ({ page }) => {
+  await page
+    .locator("main")
+    .getByRole("link", { name: "Manage", exact: true })
+    .first()
+    .click();
+  await page
+    .locator(".tabs")
+    .getByRole("link", { name: "Files", exact: true })
+    .click();
+  await page.locator("input[type=file]").setInputFiles({
+    name: "search-test.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("alpha beta alpha"),
+  });
+  await page.getByRole("button", { name: "Edit search-test.txt" }).click();
+
+  const dialog = page.getByRole("dialog");
+  const editor = dialog.locator(".cm-content");
+  await expect(editor).toBeVisible();
+  await editor.fill("alpha beta alpha");
+  await editor.press("Control+Home");
+  await editor.press("Tab");
+  await expect(editor).toContainText("\talpha beta alpha");
+  await editor.press("Shift+Tab");
+  await expect(editor).toContainText("alpha beta alpha");
+  await editor.fill("alpha beta alpha");
+  await editor.press("Control+Home");
+
+  await page.keyboard.press("Control+f");
+  const panel = dialog.locator(".cm-search");
+  const search = panel.locator('input[name="search"]');
+  const replace = panel.locator('input[name="replace"]');
+  await expect(panel).toBeVisible();
+  await expect(search).toBeFocused();
+  await expect(panel.locator('button[name="next"]')).toBeVisible();
+  await expect(panel.locator('button[name="prev"]')).toBeVisible();
+  await expect(panel.locator('button[name="select"]')).toBeVisible();
+  await expect(panel.locator('button[name="close"]')).toBeVisible();
+  await expect(panel.locator("label")).toHaveCount(3);
+  for (const option of ["case", "re", "word"]) {
+    await expect(panel.locator(`input[name="${option}"]`)).toBeVisible();
+  }
+  await expect(replace).toBeVisible();
+  await expect(panel.locator('button[name="replace"]')).toBeVisible();
+  await expect(panel.locator('button[name="replaceAll"]')).toBeVisible();
+
+  const originalViewport = page.viewportSize()!;
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const layout = await dialog.evaluate((element) => {
+      const code = element.querySelector(".code-editor .cm-editor")!;
+      const searchPanel = element.querySelector(".cm-search")!;
+      const controls = Array.from(
+        searchPanel.querySelectorAll(
+          'input[name="search"], button[name="next"], button[name="prev"], button[name="select"], label, input[name="replace"], button[name="replace"], button[name="replaceAll"], button[name="close"]',
+        ),
+      );
+      const rect = (node: Element) => {
+        const { x, y, right, bottom, width, height } = node.getBoundingClientRect();
+        return { x, y, right, bottom, width, height };
+      };
+      return {
+        editor: rect(code),
+        panel: rect(searchPanel),
+        find: rect(searchPanel.querySelector('input[name="search"]')!),
+        replace: rect(searchPanel.querySelector('input[name="replace"]')!),
+        controls: controls.map(rect),
+      };
+    });
+    expect(layout.panel.x).toBeGreaterThanOrEqual(layout.editor.x);
+    expect(layout.panel.right).toBeLessThanOrEqual(layout.editor.right + 1);
+    expect(layout.panel.y).toBeGreaterThanOrEqual(layout.editor.y);
+    expect(layout.panel.bottom).toBeLessThanOrEqual(layout.editor.bottom + 1);
+    expect(layout.panel.height).toBeLessThan(160);
+    expect(layout.panel.height).toBeLessThan(layout.editor.height / 3);
+    expect(layout.find.width).toBeLessThan(layout.editor.width * 0.75);
+    expect(layout.replace.width).toBeLessThan(layout.editor.width * 0.75);
+    for (let first = 0; first < layout.controls.length; first += 1) {
+      for (let second = first + 1; second < layout.controls.length; second += 1) {
+        const a = layout.controls[first];
+        const b = layout.controls[second];
+        expect(
+          Math.min(a.right, b.right) - Math.max(a.x, b.x) > 1 &&
+            Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y) > 1,
+        ).toBe(false);
+      }
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize(originalViewport);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await search.fill("alpha");
+  await panel.locator('button[name="next"]').click();
+  await expect(dialog.locator(".editor-statusbar")).toContainText("Ln 1, Col 6");
+  await panel.locator('button[name="next"]').click();
+  await expect(dialog.locator(".editor-statusbar")).toContainText("Ln 1, Col 17");
+  await panel.locator('button[name="prev"]').click();
+  await expect(dialog.locator(".editor-statusbar")).toContainText("Ln 1, Col 6");
+  await replace.fill("delta");
+  await panel.locator('button[name="replace"]').click();
+  await expect(editor).toContainText("delta beta alpha");
+  await replace.fill("gamma");
+  await panel.locator('button[name="replaceAll"]').click();
+  await expect(editor).toContainText("delta beta gamma");
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("Control+s");
+  await expect(page.getByRole("alert")).toContainText(
+    "Changes saved to local demo memory only",
+  );
+  await expect(dialog.locator(".editor-statusbar")).toContainText("Saved");
+
+  await page.keyboard.press("Control+f");
+  await expect(search).toBeFocused();
+  await panel.locator('button[name="close"]').click();
+  await expect(panel).toBeHidden();
+  await editor.fill("make this dirty");
+  await page.keyboard.press("Escape");
+  const wrapToggle = dialog.getByRole("button", { name: "Toggle line wrapping" });
+  await expect(wrapToggle).toBeFocused();
+  await expect(wrapToggle).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Space");
+  await expect(wrapToggle).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Space");
+  await expect(wrapToggle).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("Escape");
+  const closeButton = dialog.getByRole("button", { name: "Close", exact: true });
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press("Tab");
+  const saveButton = dialog.getByRole("button", { name: "Save", exact: true });
+  await expect(saveButton).toBeFocused();
+  await expect(saveButton).toHaveCSS("outline-style", "solid");
+  await expect(saveButton).toHaveCSS("outline-color", "rgb(76, 187, 213)");
+  page.once("dialog", (confirm) => void confirm.accept());
+  await closeButton.click();
+  await expect(dialog).toHaveCount(0);
 });
