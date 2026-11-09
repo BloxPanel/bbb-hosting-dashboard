@@ -8,6 +8,47 @@ test.beforeEach(async ({ page }) => {
 });
 test("create, filter, rename and delete a website", async ({ page }) => {
   await page.getByRole("button", { name: "Create website" }).first().click();
+  const createDialog = page.getByRole("dialog", {
+    name: "A new home for your idea",
+  });
+  const originalViewport = page.viewportSize()!;
+  for (const viewport of [
+    { width: 1366, height: 768 },
+    { width: 1280, height: 720 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const bounds = await createDialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(Math.abs(bounds!.x + bounds!.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds!.y + bounds!.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize(originalViewport);
+  await expect(createDialog.getByLabel("Website name", { exact: true })).toBeVisible();
+  await expect(createDialog.getByLabel("Subdomain")).toBeVisible();
+  await expect(createDialog.locator(".website-address-preview")).toBeVisible();
+  await expect(createDialog).toHaveCSS("overflow-y", "auto");
+  await createDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(createDialog).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Create website" }).first().click();
+  const reopenedDialog = page.getByRole("dialog", {
+    name: "A new home for your idea",
+  });
+  await reopenedDialog.getByRole("button", { name: "Close dialog" }).click();
+  await expect(reopenedDialog).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Create website" }).first().click();
   await page.getByLabel("Website name", { exact: true }).fill("A test project");
   await page.getByRole("button", { name: "Create demo draft" }).click();
   await page

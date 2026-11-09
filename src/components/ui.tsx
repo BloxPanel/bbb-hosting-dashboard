@@ -56,7 +56,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className={className}
+      className={["app-modal", className].filter(Boolean).join(" ")}
       onCancel={(event) => {
         event.preventDefault();
         if (!closeDisabled) onClose();
