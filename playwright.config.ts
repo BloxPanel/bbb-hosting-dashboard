@@ -28,7 +28,11 @@ export default defineConfig({
     },
     {
       name: "production",
-      testMatch: "production.spec.ts",
+      testMatch: [
+        "production.spec.ts",
+        "invitations.spec.ts",
+        "github-sync.spec.ts",
+      ],
       use: { baseURL: "http://127.0.0.1:4174" },
     },
   ],

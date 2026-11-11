@@ -95,6 +95,7 @@ export function SiteLayout() {
           ? [
           ["Overview", ""],
           ["Files", "/files"],
+          ["GitHub Sync", "/github"],
           ["Domains", "/domains"],
           ["Deployments", "/deployments"],
           ["Billing", "/billing"],
@@ -103,6 +104,7 @@ export function SiteLayout() {
           : [
               ["Overview", ""],
               ["Files", "/files"],
+              ["GitHub Sync", "/github"],
             ]
         ).map(([label, path]) => (
           <NavLink key={path} end to={`/dashboard/sites/${site.id}${path}`}>

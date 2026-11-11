@@ -33,6 +33,7 @@ function useAppState() {
   const [siteFiles, setSiteFiles] = useState<Record<string, HostedFile[]>>({});
   const [siteDomains, setSiteDomains] = useState<Record<string, Domain[]>>({});
   const userId = user?.id;
+  const hasHostingAccess = user?.prealphaAccess === true;
   useEffect(() => {
     if (DEMO) return;
     setProjects([]);
@@ -40,7 +41,7 @@ function useAppState() {
     setSiteFiles({});
     setSiteDomains({});
     setProjectsError(null);
-    if (!userId) {
+    if (!userId || !hasHostingAccess) {
       setProjectsLoading(false);
       return;
     }
@@ -65,7 +66,7 @@ function useAppState() {
     return () => {
       active = false;
     };
-  }, [userId, projectRefresh]);
+  }, [userId, hasHostingAccess, projectRefresh]);
   useEffect(() => {
     if (DEMO) return;
     const expire = () => {
@@ -77,6 +78,37 @@ function useAppState() {
     };
     window.addEventListener("bbb-session-expired", expire);
     return () => window.removeEventListener("bbb-session-expired", expire);
+  }, []);
+  useEffect(() => {
+    if (DEMO) return;
+    let active = true;
+    const refreshEntitlement = () => {
+      auth
+        .session()
+        .then((account) => {
+          if (active) setUser(account);
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          if (error instanceof ApiError && error.status === 401) {
+            setUser(null);
+            setProjects([]);
+            setProjectsOwnerId(null);
+            setSiteFiles({});
+            setSiteDomains({});
+          } else {
+            setAuthError(error);
+          }
+        });
+    };
+    window.addEventListener("bbb-prealpha-access-denied", refreshEntitlement);
+    return () => {
+      active = false;
+      window.removeEventListener(
+        "bbb-prealpha-access-denied",
+        refreshEntitlement,
+      );
+    };
   }, []);
   useEffect(() => {
     let active = true;

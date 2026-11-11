@@ -33,9 +33,15 @@ it("normalizes real accounts and rejects fabricated fallbacks", () => {
         email: "c@example.test",
         email_verified: 1,
         role: "customer",
+        prealpha_access: true,
       },
     }),
-  ).toMatchObject({ name: "Customer", emailVerified: true, role: "customer" });
+  ).toMatchObject({
+    name: "Customer",
+    emailVerified: true,
+    role: "customer",
+    prealphaAccess: true,
+  });
   expect(() => parseUser({ success: true })).toThrow(/unexpected/);
 });
 it("uses credentialed JSON requests for every auth operation", async () => {
@@ -52,7 +58,12 @@ it("uses credentialed JSON requests for every auth operation", async () => {
   vi.stubGlobal("fetch", fetch);
   await auth.session();
   await auth.login("c@example.test", "test-password");
-  await auth.register("c@example.test", "Customer", "test-password");
+  await auth.register(
+    "c@example.test",
+    "Customer",
+    "test-password",
+    "a".repeat(64),
+  );
   await auth.logout();
   await auth.verify("test-token");
   await auth.forgot("c@example.test");
@@ -68,6 +79,7 @@ it("uses credentialed JSON requests for every auth operation", async () => {
   ]);
   for (const [, init] of fetch.mock.calls) {
     expect(init.credentials).toBe("include");
+    expect(init.cache).toBe("no-store");
     expect(init.headers.has("Origin")).toBe(false);
     expect(init.headers.has("Authorization")).toBe(false);
     if (init.method === "POST")

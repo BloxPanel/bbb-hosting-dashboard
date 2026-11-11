@@ -48,6 +48,7 @@ type ConfirmedRoute = Readonly<{
   method: "GET" | "POST" | "PUT" | "DELETE";
   bearer?: boolean;
   session?: boolean;
+  noStore?: boolean;
 }>;
 function projectFilesPath(projectId: string, filePath?: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId))
@@ -79,42 +80,116 @@ function projectFilesPath(projectId: string, filePath?: string): string {
     .map((segment) => encodeURIComponent(segment))
     .join("/")}`;
 }
+function projectGithubPath(params: string[]): string {
+  const [projectId] = params;
+  if (!projectId || !/^[A-Za-z0-9_-]{1,128}$/.test(projectId))
+    throw new Error("The project ID is invalid.");
+  return `/v1/projects/${encodeURIComponent(projectId)}/github`;
+}
+function ownerInvitationsPath(params: string[]): string {
+  const [id] = params;
+  if (!id) return "/v1/owner/invitations";
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id))
+    throw new Error("The invitation ID is invalid.");
+  return `/v1/owner/invitations/${encodeURIComponent(id)}`;
+}
+function ownerTesterPath(params: string[]): string {
+  const [userId] = params;
+  if (!userId || !/^[A-Za-z0-9_-]{1,128}$/.test(userId))
+    throw new Error("The account ID is invalid.");
+  return `/v1/owner/testers/${encodeURIComponent(userId)}/revoke`;
+}
 // Only confirmed browser-callable endpoints. Stripe's webhook is deliberately excluded.
 export const routes: Readonly<Record<string, ConfirmedRoute>> = Object.freeze({
   "auth.session": Object.freeze({
     path: "/v1/auth/me",
     method: "GET",
     session: true,
+    noStore: true,
   }),
   "auth.login": Object.freeze({
     path: "/v1/auth/login",
     method: "POST",
     session: true,
+    noStore: true,
   }),
   "auth.register": Object.freeze({
     path: "/v1/auth/register",
     method: "POST",
     session: true,
+    noStore: true,
   }),
   "auth.logout": Object.freeze({
     path: "/v1/auth/logout",
     method: "POST",
     session: true,
+    noStore: true,
   }),
   "auth.verify": Object.freeze({
     path: "/v1/auth/verify-email",
     method: "POST",
     session: true,
+    noStore: true,
   }),
   "auth.forgot": Object.freeze({
     path: "/v1/auth/forgot-password",
     method: "POST",
     session: true,
+    noStore: true,
   }),
   "auth.reset": Object.freeze({
     path: "/v1/auth/reset-password",
     method: "POST",
     session: true,
+    noStore: true,
+  }),
+  "invitations.validate": Object.freeze({
+    path: "/v1/invitations/validate",
+    method: "POST",
+    session: true,
+    noStore: true,
+  }),
+  "invitations.redeem": Object.freeze({
+    path: "/v1/invitations/redeem",
+    method: "POST",
+    session: true,
+    noStore: true,
+  }),
+  "owner.invitations.list": Object.freeze({
+    path: (params: string[]) => {
+      const query = new URLSearchParams();
+      if (params[0]) query.set("limit", params[0]);
+      if (params[1]) query.set("cursor", params[1]);
+      const suffix = query.toString();
+      return `/v1/owner/invitations${suffix ? `?${suffix}` : ""}`;
+    },
+    method: "GET",
+    session: true,
+    noStore: true,
+  }),
+  "owner.invitations.create": Object.freeze({
+    path: "/v1/owner/invitations",
+    method: "POST",
+    session: true,
+    noStore: true,
+  }),
+  "owner.invitations.status": Object.freeze({
+    path: ownerInvitationsPath,
+    method: "GET",
+    session: true,
+    noStore: true,
+  }),
+  "owner.invitations.revoke": Object.freeze({
+    path: (params: string[]) => `${ownerInvitationsPath(params)}/revoke`,
+    method: "POST",
+    session: true,
+    noStore: true,
+  }),
+  "owner.testers.revoke": Object.freeze({
+    path: ownerTesterPath,
+    method: "POST",
+    session: true,
+    noStore: true,
   }),
   "projects.list": Object.freeze({
     path: "/v1/projects",
@@ -164,6 +239,30 @@ export const routes: Readonly<Record<string, ConfirmedRoute>> = Object.freeze({
     },
     method: "GET",
     session: true,
+  }),
+  "github.status": Object.freeze({
+    path: projectGithubPath,
+    method: "GET",
+    session: true,
+    noStore: true,
+  }),
+  "github.connect": Object.freeze({
+    path: projectGithubPath,
+    method: "PUT",
+    session: true,
+    noStore: true,
+  }),
+  "github.sync": Object.freeze({
+    path: (params: string[]) => `${projectGithubPath(params)}/sync`,
+    method: "POST",
+    session: true,
+    noStore: true,
+  }),
+  "github.disconnect": Object.freeze({
+    path: projectGithubPath,
+    method: "DELETE",
+    session: true,
+    noStore: true,
   }),
   "api.info": Object.freeze({ path: "/", method: "GET" }),
   "api.health": Object.freeze({ path: "/v1/health", method: "GET" }),
@@ -333,6 +432,7 @@ const SAFE_RETRY_CAPABILITIES = new Set([
   "files.list",
   "files.storage",
   "files.download",
+  "github.status",
   "api.info",
   "api.health",
   "api.projectCount",
@@ -430,6 +530,7 @@ export async function api<T = unknown>(
       method: route.method,
       credentials: route.session ? "include" : "omit",
       redirect: "error",
+      ...(route.noStore ? { cache: "no-store" as const } : {}),
       headers,
     });
   } catch {
@@ -448,7 +549,13 @@ export async function api<T = unknown>(
       typeof window !== "undefined"
     )
       window.dispatchEvent(new Event("bbb-session-expired"));
-    throw await errorFromResponse(response, capability, "Request failed");
+    const error = await errorFromResponse(response, capability, "Request failed");
+    if (
+      error.bbbCode === 6007 &&
+      typeof window !== "undefined"
+    )
+      window.dispatchEvent(new Event("bbb-prealpha-access-denied"));
+    throw error;
   }
   if (response.status === 204) return undefined as T;
   const body = await response.text();

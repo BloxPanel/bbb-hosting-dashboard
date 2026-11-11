@@ -6,6 +6,11 @@ import { ApiError, DEMO } from "../services/api";
 import ApiConnectivity from "../components/ApiConnectivity";
 import { ErrorDisplay } from "../components/ErrorDisplay";
 import { auth, passwordError, safeDestination } from "../services/auth";
+import {
+  clearInvitationToken,
+  getInvitationToken,
+  invitations,
+} from "../services/invitations";
 import { useRef } from "react";
 type Mode = "login" | "register" | "forgot" | "verify" | "reset";
 export default function Login({
@@ -18,36 +23,43 @@ export default function Login({
   const { user, setUser } = useApp();
   const location = useLocation();
   if (user && mode === "login" && !signUp)
-    return <Navigate to={safeDestination(location.state?.from)} replace />;
+    return (
+      <Navigate
+        to={
+          user.prealphaAccess || DEMO
+            ? safeDestination(location.state?.from)
+            : "/access-restricted"
+        }
+        replace
+      />
+    );
   return (
     <div className="login">
       <div className="login-story">
         <div className="brand-name">
           BuiltBy<span>Buzz</span>
         </div>
-        <span className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</span>
+        <span className="eyebrow">
+          {signUp ? "CLOSED PRE-ALPHA INVITATION" : "CLOSED PRE-ALPHA"}
+        </span>
         <h1>
-          Good ideas deserve
+          Hosting for ideas
           <br />a place online<span>.</span>
         </h1>
         <p>
-          A home for every project. Simple hosting, thoughtful tools,
+          BuiltByBuzz Hosting is currently in closed pre-alpha.
           <br />
-          and one straightforward price.
+          Access is available to approved testers.
         </p>
-        <div className="login-price">
-          $10 <span>/ website / year</span>
-        </div>
         <small>
-          <ShieldCheck size={16} /> Independently built. Designed for your next
-          big thing.
+          <ShieldCheck size={16} /> Secure access for the pre-alpha community.
         </small>
       </div>
       <section className="card login-card">
         <span className="eyebrow">HOSTING CONSOLE</span>
         <h2>
           {signUp
-            ? "Make yourself at home."
+            ? "Accept your invitation."
             : {
                 login: "Welcome back.",
                 register: "Make yourself at home.",
@@ -58,8 +70,8 @@ export default function Login({
         </h2>
         <p>
           {signUp
-            ? "Create your BuiltByBuzz hosting account."
-            : "Sign in to manage your corner of the internet."}
+            ? "Create an account with the email address that received this invitation."
+            : "Returning testers can sign in. Hosting access is checked by the API."}
         </p>
         <AuthForm
           key={signUp ? "register" : mode}
@@ -77,6 +89,7 @@ export default function Login({
                   id: "demo_user",
                   name: "Jamie Demo",
                   email: "jamie@example.com",
+                  prealphaAccess: true,
                 })
               }
             >
@@ -93,7 +106,9 @@ function AuthForm({ mode }: { mode: Mode }) {
   const { setUser, notice, loading, authError, setAuthError } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
-  const [token, setToken] = useState(() => takeLinkToken());
+  const [token, setToken] = useState(() =>
+    mode === "verify" || mode === "reset" ? takeLinkToken() : "",
+  );
   useEffect(() => {
     linkToken = "";
   }, []);
@@ -161,16 +176,44 @@ function AuthForm({ mode }: { mode: Mode }) {
             setApiFailure(null);
             try {
               if (mode === "login") {
-                setUser(await auth.login(email, password));
+                const account = await auth.login(email, password);
+                setUser(account);
                 setAuthError(null);
-                navigate(safeDestination(location.state?.from), {
-                  replace: true,
-                });
+                if (!account.prealphaAccess && account.emailVerified === true) {
+                  try {
+                    await invitations.redeem(getInvitationToken() || undefined);
+                    clearInvitationToken();
+                    const refreshed = await auth.session();
+                    setUser(refreshed);
+                    navigate(
+                      refreshed.prealphaAccess
+                        ? safeDestination(location.state?.from)
+                        : "/access-restricted",
+                      { replace: true },
+                    );
+                  } catch (redemptionError) {
+                    setApiFailure(redemptionError);
+                    navigate("/access-restricted", { replace: true });
+                  }
+                } else {
+                  navigate(
+                    account.prealphaAccess || DEMO
+                      ? safeDestination(location.state?.from)
+                      : "/access-restricted",
+                    { replace: true },
+                  );
+                }
               }
               if (mode === "register") {
-                await auth.register(email, name, password);
+                const invitationToken = getInvitationToken();
+                if (!invitationToken) {
+                  navigate("/access-restricted", { replace: true });
+                  return;
+                }
+                await auth.register(email, name, password, invitationToken);
+                clearInvitationToken();
                 setSuccess(
-                  "Check your email for a verification link. If your address is eligible, you'll receive instructions shortly.",
+                  "Registration received. Check your email for a verification link. After verifying, sign in to complete access approval.",
                 );
               }
               if (mode === "forgot") {
@@ -187,6 +230,7 @@ function AuthForm({ mode }: { mode: Mode }) {
               }
               if (mode === "reset") {
                 await auth.reset(token, password);
+                clearInvitationToken();
                 setToken("");
                 linkToken = "";
                 setSuccess("Password reset. Sign in with your new password.");
@@ -276,17 +320,17 @@ function AuthForm({ mode }: { mode: Mode }) {
         </form>
       )}
       <p className="auth-switch">
-        <Link className="text-link" to="/login">
-          Sign in
-        </Link>{" "}
-        ·{" "}
-        <Link className="text-link" to="/register">
-          Create account
-        </Link>{" "}
-        ·{" "}
+        {mode !== "login" && (
+          <>
+            <Link className="text-link" to="/login">Sign in</Link>{" "}·{" "}
+          </>
+        )}
         <Link className="text-link" to="/forgot-password">
           Forgot password?
         </Link>
+        {mode === "register" && (
+          <>{" "}·{" "}<Link className="text-link" to="/invite">Invitation details</Link></>
+        )}
       </p>
     </>
   );

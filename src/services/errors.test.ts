@@ -26,6 +26,13 @@ describe("BBB error protocol", () => {
       [4001, "EMAIL_VERIFICATION_REQUIRED"],
       [4002, "SESSION_EXPIRED"],
       [5002, "HOSTING_INACTIVE"],
+      [6001, "INVITATION_REQUIRED"],
+      [6002, "INVALID_INVITATION"],
+      [6003, "INVITATION_EXPIRED"],
+      [6004, "INVITATION_REVOKED"],
+      [6005, "INVITATION_ALREADY_REDEEMED"],
+      [6006, "INVITATION_EMAIL_MISMATCH"],
+      [6007, "PREALPHA_ACCESS_DENIED"],
     ] as const) {
       expect(BBB_ERROR_REGISTRY[code].identifier).toBe(identifier);
     }
@@ -43,6 +50,60 @@ describe("BBB error protocol", () => {
       identifier: "UNAUTHORIZED",
       backendCode: 1002,
       safeMessage: "Please sign in to continue.",
+    });
+  });
+
+  it("accepts documented invitation errors and never trusts arbitrary messages", () => {
+    expect(
+      parseBackendError({
+        success: false,
+        error: "INVITATION_EXPIRED",
+        code: 6003,
+        message: "This invitation has expired.",
+      }),
+    ).toEqual({
+      identifier: "INVITATION_EXPIRED",
+      backendCode: 6003,
+      safeMessage: "This invitation has expired.",
+    });
+    expect(
+      normalizeError(
+        {
+          status: 410,
+          code: "INVITATION_REVOKED",
+          identifier: "INVITATION_REVOKED",
+          bbbCode: 6004,
+        },
+        { status: 410, identifier: "INVITATION_REVOKED", backendCode: 6004 },
+      ),
+    ).toMatchObject({
+      code: 6004,
+      identifier: "INVITATION_REVOKED",
+      message: "This invitation is no longer available.",
+    });
+    expect(BBB_ERROR_REGISTRY[6004].message).not.toContain("token");
+  });
+
+  it("maps GitHub Sync failures onto existing BBB error codes", () => {
+    expect(
+      parseBackendError({
+        error: "GITHUB_SYNC_CONFLICT",
+        code: 1005,
+      }),
+    ).toEqual({
+      identifier: "GITHUB_SYNC_CONFLICT",
+      backendCode: 1005,
+      safeMessage:
+        "GitHub Sync found a file changed both in GitHub and the built-in editor. Resolve the file conflict before retrying.",
+    });
+    expect(
+      parseBackendError({
+        error: "GITHUB_REPOSITORY_TOO_LARGE",
+        code: 2004,
+      }),
+    ).toMatchObject({
+      identifier: "GITHUB_REPOSITORY_TOO_LARGE",
+      backendCode: 2004,
     });
   });
 
@@ -160,6 +221,10 @@ describe("BBB error protocol", () => {
     expect(isRetrySafeOperation("Load Websites")).toBe(true);
     expect(isRetrySafeOperation("Load Files")).toBe(true);
     expect(isRetrySafeOperation("Load Storage")).toBe(true);
+    expect(isRetrySafeOperation("github.status")).toBe(true);
+    expect(isRetrySafeOperation("github.connect")).toBe(false);
+    expect(isRetrySafeOperation("github.sync")).toBe(false);
+    expect(isRetrySafeOperation("github.disconnect")).toBe(false);
     expect(isRetrySafeOperation("Create Website")).toBe(false);
     expect(isRetrySafeOperation("Upload File")).toBe(false);
     expect(isRetrySafeOperation("Replace File")).toBe(false);

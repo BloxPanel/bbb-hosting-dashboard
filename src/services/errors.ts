@@ -65,6 +65,13 @@ const definitions: readonly ErrorCodeDefinition[] = [
   { code: 5001, identifier: "PAYMENT_FAILED", message: "Your payment could not be completed.", category: "Billing and hosting", retryable: false },
   { code: 5002, identifier: "HOSTING_INACTIVE", message: "This website's hosting is not active.", category: "Billing and hosting", retryable: false },
   { code: 5003, identifier: "BILLING_UNAVAILABLE", message: "Billing is temporarily unavailable.", category: "Billing and hosting", retryable: false },
+  { code: 6001, identifier: "INVITATION_REQUIRED", message: "A valid invitation is required to register.", category: "Pre-alpha access", retryable: false },
+  { code: 6002, identifier: "INVALID_INVITATION", message: "This invitation is invalid.", category: "Pre-alpha access", retryable: false },
+  { code: 6003, identifier: "INVITATION_EXPIRED", message: "This invitation has expired.", category: "Pre-alpha access", retryable: false },
+  { code: 6004, identifier: "INVITATION_REVOKED", message: "This invitation is no longer available.", category: "Pre-alpha access", retryable: false },
+  { code: 6005, identifier: "INVITATION_ALREADY_REDEEMED", message: "This invitation has already been used.", category: "Pre-alpha access", retryable: false },
+  { code: 6006, identifier: "INVITATION_EMAIL_MISMATCH", message: "This invitation cannot be used with this account.", category: "Pre-alpha access", retryable: false },
+  { code: 6007, identifier: "PREALPHA_ACCESS_DENIED", message: "This account does not have pre-alpha access.", category: "Pre-alpha access", retryable: false },
 ];
 
 export const BBB_ERROR_REGISTRY: Readonly<Record<number, ErrorCodeDefinition>> =
@@ -93,6 +100,11 @@ const legacyIdentifiers: Readonly<Record<string, number>> = Object.freeze({
   FILE_ALREADY_EXISTS: 1005,
   FILE_COUNT_LIMIT_EXCEEDED: 2003,
   PROJECT_BUSY: 1005,
+  GITHUB_REPOSITORY_INVALID: 1004,
+  GITHUB_NOT_CONNECTED: 1005,
+  GITHUB_SYNC_CONFLICT: 1005,
+  GITHUB_REPOSITORY_TOO_LARGE: 2004,
+  GITHUB_SYNC_FAILED: 1007,
   CONTENT_LENGTH_REQUIRED: 1004,
   INVALID_TOKEN: 1004,
 });
@@ -114,6 +126,16 @@ const legacyMessages: Readonly<Record<string, string>> = Object.freeze({
   FILE_ALREADY_EXISTS: "A file with that name already exists. Choose Replace to overwrite it.",
   FILE_NOT_FOUND: "That file no longer exists. Refresh the file list.",
   PROJECT_BUSY: "Another file change is in progress. Please try again.",
+  GITHUB_REPOSITORY_INVALID:
+    "Enter a valid public GitHub repository and branch.",
+  GITHUB_NOT_CONNECTED:
+    "Connect a GitHub repository before starting a sync.",
+  GITHUB_SYNC_CONFLICT:
+    "GitHub Sync found a file changed both in GitHub and the built-in editor. Resolve the file conflict before retrying.",
+  GITHUB_REPOSITORY_TOO_LARGE:
+    "This repository exceeds the allowed size for a GitHub Sync.",
+  GITHUB_SYNC_FAILED:
+    "The GitHub repository could not be synchronized. Please try again later.",
   EMAIL_VERIFICATION_REQUIRED: "Please verify your email address before continuing.",
   EMAIL_NOT_VERIFIED: "Please verify your email address before creating a website.",
   EMAIL_UNVERIFIED: "Please verify your email address before creating a website.",
@@ -160,6 +182,7 @@ const SAFE_LABELS = new Set([
   "API Client",
   "File Manager",
   "Code Editor",
+  "GitHub Sync",
   "Websites",
   "Authentication",
   "API Connectivity",
@@ -170,6 +193,14 @@ const SAFE_LABELS = new Set([
   "auth.verify",
   "auth.forgot",
   "auth.reset",
+  "invitations.validate",
+  "invitations.redeem",
+  "owner.invitations",
+  "owner.invitations.list",
+  "owner.invitations.create",
+  "owner.invitations.status",
+  "owner.invitations.revoke",
+  "owner.testers.revoke",
   "projects.list",
   "projects.create",
   "files.list",
@@ -177,6 +208,10 @@ const SAFE_LABELS = new Set([
   "files.replace",
   "files.delete",
   "files.storage",
+  "github.status",
+  "github.connect",
+  "github.sync",
+  "github.disconnect",
   "files.download",
   "api.info",
   "api.health",
@@ -196,6 +231,7 @@ const SAFE_LABELS = new Set([
   "Save File",
   "Check API Health",
   "Read Project Count",
+  "Load GitHub Sync",
 ]);
 const SAFE_RETRY_OPERATIONS = new Set([
   "auth.session",
@@ -214,6 +250,7 @@ const SAFE_RETRY_OPERATIONS = new Set([
   "Load Editor File",
   "Check API Health",
   "Read Project Count",
+  "github.status",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

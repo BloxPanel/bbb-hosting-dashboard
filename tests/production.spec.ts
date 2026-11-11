@@ -5,6 +5,7 @@ const account = {
   display_name: "Alex Customer",
   email: "alex@example.test",
   email_verified: true,
+  prealpha_access: true,
   role: "customer",
 };
 test.beforeEach(async ({ page }) => {
@@ -47,11 +48,17 @@ test("registration validation, request and generic acknowledgment", async ({
   page,
 }) => {
   let body: unknown;
+  const inviteToken = "a".repeat(64);
+  await page.route("**/v1/invitations/validate", (route) =>
+    route.fulfill({ json: { success: true, valid: true } }),
+  );
   await page.route("**/v1/auth/register", async (route) => {
     body = route.request().postDataJSON();
     await route.fulfill({ status: 202, json: { success: true } });
   });
-  await page.goto("/register");
+  await page.goto(`/invite#token=${inviteToken}`);
+  await expect(page).toHaveURL(/\/invite$/);
+  await page.getByRole("link", { name: /Continue to create your account/ }).click();
   await page.getByLabel("Display name").fill("Alex");
   await page.getByLabel("Email address").fill(account.email);
   await page.getByLabel("New password", { exact: true }).fill("short");
@@ -66,14 +73,212 @@ test("registration validation, request and generic acknowledgment", async ({
   await expect(page.getByRole("alert")).toContainText("match");
   await page.getByLabel("Confirm password").fill("test-only-password");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "If your address is eligible",
-  );
+  await expect(page.getByRole("status")).toContainText("Registration received");
   expect(body).toEqual({
     email: account.email,
     display_name: "Alex",
     password: "test-only-password",
+    invitation_token: inviteToken,
   });
+});
+
+test("public registration is restricted without an invitation", async ({
+  page,
+}) => {
+  await page.goto("/register");
+  await expect(page).toHaveURL(/\/access-restricted$/);
+  await expect(
+    page.getByRole("heading", { name: "Access is currently restricted." }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /Returning tester/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Create account/ })).toHaveCount(0);
+});
+
+test("invalid and unavailable invitation links show safe backend errors", async ({
+  page,
+}) => {
+  let validationResponse: {
+    status: number;
+    json: { success: false; error: string; code: number; message: string };
+  } = {
+    status: 400,
+    json: {
+      success: false,
+      error: "INVALID_INVITATION",
+      code: 6002,
+      message: "This invitation is invalid.",
+    },
+  };
+  await page.route("**/v1/invitations/validate", (route) =>
+    route.fulfill(validationResponse),
+  );
+  for (const [index, [identifier, code, message, status]] of [
+    ["INVALID_INVITATION", 6002, "This invitation is invalid.", 400],
+    ["INVITATION_EXPIRED", 6003, "This invitation has expired.", 410],
+    ["INVITATION_REVOKED", 6004, "This invitation is no longer available.", 410],
+    ["INVITATION_ALREADY_REDEEMED", 6005, "This invitation has already been used.", 409],
+  ].entries()) {
+    validationResponse = {
+        status,
+        json: { success: false, error: identifier, code, message },
+    };
+    await page.goto(`/invite#token=${String(index + 2).repeat(64)}`);
+    await expect(page.getByRole("alert")).toContainText(message);
+    await expect(page).toHaveURL(/\/invite$/);
+    await expect(page.getByRole("link", { name: /Continue to create/ })).toHaveCount(0);
+    await page.goto("/access-restricted");
+  }
+});
+
+test("verified invited account can finish redemption after reload using an empty body", async ({
+  page,
+}) => {
+  const invitedAccount = { ...account, email_verified: true, prealpha_access: false };
+  await page.unroute("https://api.builtbybuzz.dev/**");
+  await page.route("**/v1/auth/login", (route) =>
+    route.fulfill({ json: { success: true, user: invitedAccount } }),
+  );
+  let redeemBody: unknown;
+  await page.route("**/v1/invitations/redeem", async (route) => {
+    redeemBody = route.request().postDataJSON();
+    await route.fulfill({ json: { success: true, access: "approved" } });
+  });
+  let sessionCalls = 0;
+  await page.route("**/v1/auth/me", (route) => {
+    sessionCalls++;
+    return sessionCalls === 1
+      ? route.fulfill({ status: 401, json: { error: { code: "UNAUTHORIZED" } } })
+      : route.fulfill({
+          json: {
+            success: true,
+            user: { ...invitedAccount, prealpha_access: true },
+          },
+        });
+  });
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { success: true, projects: [] } }),
+  );
+  await page.goto("/login");
+  await page.getByLabel("Email address", { exact: true }).fill(invitedAccount.email);
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  expect(redeemBody).toEqual({});
+});
+
+test("unauthorized authenticated account cannot reach hosting dashboard", async ({
+  page,
+}) => {
+  await page.unroute("https://api.builtbybuzz.dev/**");
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        user: { ...account, prealpha_access: false },
+      },
+    }),
+  );
+  await page.goto("/dashboard/sites");
+  await expect(page).toHaveURL(/\/access-restricted$/);
+  await expect(
+    page.getByRole("heading", { name: "Access is currently restricted." }),
+  ).toBeVisible();
+});
+
+test("owner can manage invitations, while non-owners cannot access management", async ({
+  page,
+}) => {
+  const owner = { ...account, role: "owner" };
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { success: true, user: owner } }),
+  );
+  await page.route("**/v1/projects", (route) =>
+    route.fulfill({ json: { success: true, projects: [] } }),
+  );
+  const pendingInvitation = {
+    id: "invitation-1",
+    intended_email: "tester@example.test",
+    created_at: 1794268800,
+    expires_at: 1794873600,
+    redeemed_at: null,
+    revoked_at: null,
+    redeemed_by_user_id: null,
+    created_by_user_id: owner.id,
+    notes: "Cohort",
+    status: "pending",
+  };
+  const redeemedInvitation = {
+    ...pendingInvitation,
+    id: "invitation-redeemed",
+    redeemed_at: 1794268900,
+    redeemed_by_user_id: "tester-1",
+    status: "redeemed",
+  };
+  await page.route("**/v1/owner/invitations?**", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        invitations: [pendingInvitation, redeemedInvitation],
+        next_cursor: null,
+      },
+    }),
+  );
+  let requestBody: unknown;
+  await page.route("**/v1/owner/invitations", async (route) => {
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      json: {
+        success: true,
+        invitation: { ...pendingInvitation, notes: null },
+        token: "c".repeat(64),
+      },
+    });
+  });
+  await page.route("**/v1/owner/invitations/invitation-1/revoke", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        invitation: {
+          ...pendingInvitation,
+          revoked_at: 1794269000,
+          status: "revoked",
+        },
+      },
+    }),
+  );
+  await page.route("**/v1/owner/testers/tester-1/revoke", (route) =>
+    route.fulfill({
+      json: { success: true, user_id: "tester-1", access: "revoked" },
+    }),
+  );
+  await page.goto("/dashboard/invitations");
+  await expect(page.getByRole("heading", { name: "Invitations", exact: true })).toBeVisible();
+  await page.getByLabel("Intended email address").fill("tester@example.test");
+  await page.getByRole("button", { name: "Create invitation" }).click();
+  await expect(page.getByLabel("Invitation link — shown once")).toHaveValue(
+    `https://hosting.builtbybuzz.dev/invite#token=${"c".repeat(64)}`,
+  );
+  expect(requestBody).toMatchObject({
+    email: "tester@example.test",
+    expires_in_seconds: expect.any(Number),
+  });
+  await expect(
+    page.getByText("tester@example.test", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Revoke tester access" }).click();
+  await expect(page.getByText("Tester access revoked.")).toBeVisible();
+  await page.getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(page.getByText("Invitation revoked.")).toBeVisible();
+
+  await page.unroute("**/v1/auth/me");
+  await page.route("**/v1/auth/me", (route) =>
+    route.fulfill({ json: { success: true, user: account } }),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Owner access required" }),
+  ).toBeVisible();
 });
 for (const path of ["verify-email", "reset-password"]) {
   test(
@@ -927,7 +1132,6 @@ test("Pages fallback supports every public auth route and dashboard", async ({
       : route.continue(),
   );
   for (const path of [
-    "register",
     "login",
     "verify-email",
     "forgot-password",
@@ -939,6 +1143,9 @@ test("Pages fallback supports every public auth route and dashboard", async ({
     await page.reload();
     await expect(page.locator("form")).toBeVisible();
   }
+  await page.goto("/register");
+  await expect(page.getByRole("heading", { name: "Access is currently restricted." })).toBeVisible();
+  await expect(page.locator("form")).toHaveCount(0);
 });
 
 test("login errors are understandable and repeated submission is blocked", async ({

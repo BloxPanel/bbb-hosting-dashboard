@@ -14,10 +14,12 @@ import {
   X,
   FolderOpen,
   GitBranch,
+  MailPlus,
 } from "lucide-react";
 import { useApp } from "../app/state";
 import { ApiError, DEMO } from "../services/api";
 import { auth } from "../services/auth";
+import { clearInvitationToken } from "../services/invitations";
 export default function Layout() {
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -135,6 +137,16 @@ export default function Layout() {
               )}
             </NavLink>
           ))}
+          {user?.role === "owner" && (
+            <NavLink
+              to="/dashboard/invitations"
+              title="Invitations"
+              onClick={() => setOpen(false)}
+            >
+              <MailPlus size={19} />
+              <span className="sidebar-label">Invitations</span>
+            </NavLink>
+          )}
           {siteId && (
             <>
               <div className="nav-caption sidebar-label">CURRENT WEBSITE</div>
@@ -143,6 +155,7 @@ export default function Layout() {
                   ? [
                       ["Overview", "", Globe2],
                       ["Files", "/files", FolderOpen],
+                      ["GitHub Sync", "/github", GitBranch],
                       ["Domains", "/domains", Globe2],
                       ["Deployments", "/deployments", GitBranch],
                       ["Billing", "/billing", CreditCard],
@@ -151,6 +164,7 @@ export default function Layout() {
                   : [
                       ["Overview", "", Globe2],
                       ["Files", "/files", FolderOpen],
+                      ["GitHub Sync", "/github", GitBranch],
                     ]),
               ].map(([label, path, Icon]) => {
                 const I = Icon as typeof Globe2;
@@ -239,6 +253,7 @@ export default function Layout() {
                 setLoggingOut(true);
                 try {
                   if (!DEMO) await auth.logout();
+                  clearInvitationToken();
                   setUser(null);
                   navigate("/login", { replace: true });
                 } catch (e) {

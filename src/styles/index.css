@@ -914,6 +914,196 @@ tbody tr:hover {
   color: #b1c0d1;
   margin: 23px 0;
 }
+.github-sync-panel {
+  min-width: 0;
+}
+.github-sync-heading,
+.github-sync-title,
+.github-sync-status-row,
+.github-sync-status,
+.github-sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.github-sync-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.github-sync-title {
+  min-width: 0;
+  align-items: flex-start;
+}
+.github-sync-title > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.github-sync-title p {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+.github-sync-refresh,
+.github-sync-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.github-conflict-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0 0 22px;
+  border: 1px solid #6b542d;
+  background: #31291e;
+  color: #e8cc8e;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.github-conflict-warning > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.github-conflict-warning p {
+  margin: 5px 0 0;
+  color: #d2c19a;
+  font-size: 11px;
+}
+.github-sync-error {
+  margin: 0 0 20px;
+}
+.github-sync-loading {
+  padding: 18px 0;
+  color: #94a3b8;
+}
+.github-sync-status-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 0 0 18px;
+  border-bottom: 1px solid #2b3546;
+}
+.github-sync-status {
+  flex-wrap: wrap;
+}
+.github-sync-status > span:first-child,
+.github-sync-mode {
+  color: #94a3b8;
+  font-size: 12px;
+}
+.github-sync-mode {
+  overflow-wrap: anywhere;
+}
+.github-sync-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0 12px;
+}
+.github-sync-details > div {
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid #2b3546;
+  border-radius: 7px;
+  background: #121a27;
+}
+.github-sync-details dt {
+  margin-bottom: 8px;
+  color: #94a3b8;
+  font-size: 10px;
+}
+.github-sync-details dd {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.github-sync-commit {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  word-break: break-all;
+}
+.github-sync-value {
+  overflow-wrap: anywhere;
+}
+.github-sync-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+.github-sync-form > label {
+  min-width: 0;
+}
+.github-sync-form small {
+  display: block;
+  margin-top: 6px;
+  color: #8494aa;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.github-sync-intro,
+.github-sync-wide {
+  grid-column: 1 / -1;
+}
+.github-sync-intro {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.github-sync-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.github-sync-checkbox input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: #e6af45;
+}
+.github-sync-checkbox span {
+  min-width: 0;
+}
+.github-sync-actions {
+  flex-wrap: wrap;
+  padding: 4px 0 0;
+}
+.github-sync-disconnect {
+  margin-left: auto;
+}
+.github-sync-progress {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid #344155;
+  border-radius: 7px;
+  background: #141d2a;
+  color: #c7d3e3;
+  font-size: 12px;
+}
+.github-sync-progress progress {
+  margin: 10px 0 6px;
+}
+.github-sync-progress small {
+  display: block;
+  color: #8494aa;
+}
+.github-sync-failure {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #6b542d;
+  border-radius: 6px;
+  background: #31291e;
+  color: #e8cc8e;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.github-sync-failure.conflict {
+  border-color: #70404d;
+  background: #35232c;
+  color: #f0a4b4;
+}
 .billing-stats {
   grid-template-columns: repeat(2, 1fr);
 }
@@ -1279,6 +1469,33 @@ progress {
   }
   .file-actions {
     justify-content: flex-start;
+  }
+  .github-sync-form,
+  .github-sync-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .github-sync-intro,
+  .github-sync-wide {
+    grid-column: auto;
+  }
+  .github-sync-heading {
+    align-items: flex-start;
+  }
+  .github-sync-refresh {
+    width: 100%;
+  }
+  .github-sync-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .github-sync-actions button {
+    width: 100%;
+  }
+  .github-sync-disconnect {
+    margin-left: 0;
+  }
+  .github-conflict-warning {
+    padding: 13px;
   }
 }
 dialog {
@@ -2383,4 +2600,148 @@ aside {
 }
 .auth-switch .text-link {
   color: #4cbbd5;
+}
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 20px;
+  padding: 32px 18px;
+  background:
+    radial-gradient(ellipse at 18% 18%, #263b42 0, transparent 38%),
+    #0d111b;
+}
+.auth-brand {
+  text-align: center;
+}
+.auth-brand .brand-name {
+  font-size: 24px;
+}
+.auth-brand small {
+  display: block;
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 8px;
+  letter-spacing: 2px;
+}
+.auth-card {
+  width: min(100%, 560px);
+  padding: clamp(22px, 5vw, 42px);
+}
+.auth-card h2 {
+  margin: 8px 0 12px;
+  font-size: clamp(24px, 4vw, 32px);
+}
+.auth-card > p {
+  font-size: 13px;
+}
+.auth-card .eyebrow {
+  color: #d7b76e;
+}
+.auth-footnote {
+  margin: 0;
+  color: #718198;
+  font-size: 11px;
+}
+.invite-actions {
+  display: grid;
+  gap: 11px;
+  margin: 22px 0;
+}
+.invite-link-button {
+  justify-content: center;
+  text-align: center;
+}
+.restricted-security {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  margin-top: 20px;
+  border: 1px solid #344153;
+  border-radius: 8px;
+  background: #151d29;
+  color: #a9bacd;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.restricted-security svg {
+  flex: 0 0 auto;
+  color: #e6af45;
+}
+.owner-invite-form,
+.owner-invitations-list {
+  padding: 24px;
+  margin-bottom: 22px;
+}
+.owner-invite-form > p,
+.owner-invitations-list .section-heading p {
+  font-size: 12px;
+}
+.owner-invite-form form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.owner-invite-form form label:last-of-type {
+  grid-column: 1 / -1;
+}
+.owner-invite-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 10px 12px;
+  border: 1px solid #344153;
+  border-radius: 7px;
+  background: #101722;
+  color: #f8fafc;
+  resize: vertical;
+}
+.created-invite {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #3c594c;
+  border-radius: 8px;
+  background: #14251f;
+}
+.created-invite label {
+  display: block;
+  margin-bottom: 8px;
+  color: #9dcab4;
+  font-size: 11px;
+}
+.created-invite input {
+  min-width: 0;
+}
+.created-invite p {
+  margin: 8px 0 0;
+}
+.owner-actions {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.danger-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #e39ca9;
+}
+@media (max-width: 700px) {
+  .owner-invite-form,
+  .owner-invitations-list {
+    padding: 17px;
+  }
+  .owner-invite-form form {
+    grid-template-columns: 1fr;
+  }
+  .owner-invite-form form label:last-of-type {
+    grid-column: auto;
+  }
+  .created-invite .row {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }

@@ -27,6 +27,7 @@ export function parseUser(payload: unknown): UserAccount {
             ? Boolean(data.email_verified_at)
             : undefined,
     role: typeof data.role === "string" ? data.role : undefined,
+    prealphaAccess: data.prealpha_access === true,
   };
 }
 const post = (capability: string, body: object = {}) => {
@@ -40,8 +41,12 @@ export const auth = {
   session: async () => parseUser(await api("auth.session")),
   login: async (email: string, password: string) =>
     parseUser(await post("auth.login", { email, password })),
-  register: (email: string, display_name: string, password: string) =>
-    post("auth.register", { email, display_name, password }),
+  register: (
+    email: string,
+    display_name: string,
+    password: string,
+    invitation_token: string,
+  ) => post("auth.register", { email, display_name, password, invitation_token }),
   logout: () => post("auth.logout"),
   verify: (token: string) => post("auth.verify", { token }),
   forgot: (email: string) => post("auth.forgot", { email }),

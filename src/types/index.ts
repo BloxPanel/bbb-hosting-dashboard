@@ -11,6 +11,7 @@ export interface UserAccount {
   email: string;
   emailVerified?: boolean;
   role?: string;
+  prealphaAccess: boolean;
 }
 export interface HostingEntitlement {
   siteId: string;
