@@ -66,6 +66,14 @@ export function ErrorDisplay({
     Boolean(onRetry) &&
     details.retryable &&
     isRetrySafeOperation(details.operation);
+  const incidentStatus =
+    details.referenceSource === "client"
+      ? "Frontend-only; not automatically recorded in D1"
+      : details.incidentRecorded === true
+        ? "Recorded by the backend"
+        : details.incidentRecorded === false
+          ? "Not confirmed in D1; reference may be available in Worker logs"
+          : "Recording status not provided by the backend";
 
   useEffect(() => {
     setNotice("");
@@ -135,6 +143,10 @@ export function ErrorDisplay({
         <div>
           <dt>Reference</dt>
           <dd>{details.reference}</dd>
+        </div>
+        <div>
+          <dt>Incident recording</dt>
+          <dd>{incidentStatus}</dd>
         </div>
         <div>
           <dt>Time</dt>

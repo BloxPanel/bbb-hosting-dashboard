@@ -763,6 +763,16 @@ test("Chromium supplies Content-Length for a browser-native File upload", async 
 test("file API errors are visible and expired file sessions return to login", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          document.documentElement.dataset.copiedReport = text;
+        },
+      },
+    });
+  });
   await page.route("**/v1/auth/me", (route) =>
     route.fulfill({ json: { user: account } }),
   );
@@ -783,7 +793,14 @@ test("file API errors are visible and expired file sessions return to login", as
   await page.route("**/v1/projects/project-error/files?*", (route) =>
     route.fulfill({
       status: 403,
-      json: { success: false, error: "FORBIDDEN" },
+      json: {
+        success: false,
+        error: "FORBIDDEN",
+        code: 1003,
+        message: "You don't have permission to perform this action.",
+        reference: "BBB-SEC-8F2A91C74D60",
+        incidentRecorded: false,
+      },
     }),
   );
   await page.route("**/v1/projects/project-error/storage", (route) =>
@@ -806,7 +823,28 @@ test("file API errors are visible and expired file sessions return to login", as
     .locator(".tabs")
     .getByRole("link", { name: "Files", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("permission");
+  const errorDisplay = page.getByRole("alert");
+  await expect(errorDisplay).toContainText("permission");
+  await expect(errorDisplay).toContainText("BBB-SEC-8F2A91C74D60");
+  await expect(errorDisplay).toContainText(
+    "Not confirmed in D1; reference may be available in Worker logs",
+  );
+  await errorDisplay.getByRole("button", { name: "Copy Error Details" }).click();
+  await expect(errorDisplay.getByRole("button", { name: "Copied" })).toBeVisible();
+  const copiedReport = await page.locator("html").getAttribute("data-copied-report");
+  expect(copiedReport).toContain("Operation: Load Files");
+  expect(copiedReport).toContain(
+    "Reference: BBB-SEC-8F2A91C74D60",
+  );
+  expect(copiedReport).toContain(
+    "Message: You don't have permission to perform this action.",
+  );
+  expect(copiedReport).toMatch(/Timestamp \(UTC\): \d{4}-\d{2}-\d{2}T/);
+  expect(copiedReport).toContain(
+    "Incident recording: Not confirmed in D1; use the reference for Worker-log correlation",
+  );
+  expect(copiedReport).not.toContain("Authorization");
+  expect(copiedReport).not.toContain("cookie");
 
   await page.unroute("**/v1/projects/project-error/files?*");
   await page.route("**/v1/projects/project-error/files?*", (route) =>

@@ -10,6 +10,8 @@ export interface ErrorContext {
   readonly status?: number;
   readonly identifier?: string;
   readonly backendCode?: number;
+  readonly reference?: string;
+  readonly incidentRecorded?: boolean;
   readonly operation?: string;
   readonly component?: string;
   readonly field?: string;
@@ -29,42 +31,44 @@ export interface NormalizedError {
   readonly field?: string;
   readonly timestamp: string;
   readonly reference: string;
+  readonly referenceSource: "backend" | "client";
+  readonly incidentRecorded?: boolean;
   readonly retryable: boolean;
   readonly report: string;
 }
 
 const definitions: readonly ErrorCodeDefinition[] = [
-  { code: 1000, identifier: "UNKNOWN_ERROR", message: "Something unexpected happened.", category: "General errors", retryable: false },
+  { code: 1000, identifier: "UNKNOWN_ERROR", message: "Something went wrong. Please try again.", category: "General errors", retryable: false },
   { code: 1001, identifier: "NOT_FOUND", message: "The requested resource could not be found.", category: "General errors", retryable: false },
   { code: 1002, identifier: "UNAUTHORIZED", message: "Please sign in to continue.", category: "General errors", retryable: false },
   { code: 1003, identifier: "FORBIDDEN", message: "You don't have permission to perform this action.", category: "General errors", retryable: false },
-  { code: 1004, identifier: "INVALID_INPUT", message: "Please check the information you entered.", category: "General errors", retryable: false },
-  { code: 1005, identifier: "CONFLICT", message: "This resource already exists.", category: "General errors", retryable: false },
-  { code: 1006, identifier: "RATE_LIMITED", message: "Too many requests. Please try again later.", category: "General errors", retryable: false },
-  { code: 1007, identifier: "SERVICE_UNAVAILABLE", message: "This service is temporarily unavailable.", category: "General errors", retryable: false },
-  { code: 1008, identifier: "NETWORK_ERROR", message: "Unable to contact the service.", category: "General errors", retryable: false },
-  { code: 1009, identifier: "INVALID_API_RESPONSE", message: "The service returned an unexpected response.", category: "General errors", retryable: false },
-  { code: 2001, identifier: "INVALID_FILE_METADATA", message: "The file manager received unexpected file information.", category: "File management", retryable: false },
-  { code: 2002, identifier: "FILE_UPLOAD_FAILED", message: "Your file could not be uploaded.", category: "File management", retryable: false },
-  { code: 2003, identifier: "STORAGE_QUOTA_EXCEEDED", message: "Your website has reached its storage limit.", category: "File management", retryable: false },
-  { code: 2004, identifier: "FILE_TOO_LARGE", message: "This file exceeds the maximum upload size.", category: "File management", retryable: false },
+  { code: 1004, identifier: "INVALID_INPUT", message: "Please check your request and try again.", category: "General errors", retryable: false },
+  { code: 1005, identifier: "CONFLICT", message: "This request conflicts with the current resource state.", category: "General errors", retryable: false },
+  { code: 1006, identifier: "RATE_LIMITED", message: "Too many requests. Please wait a moment and try again.", category: "General errors", retryable: false },
+  { code: 1007, identifier: "SERVICE_UNAVAILABLE", message: "The service is temporarily unavailable. Please try again.", category: "General errors", retryable: false },
+  { code: 1008, identifier: "NETWORK_ERROR", message: "A network connection could not be established.", category: "General errors", retryable: false },
+  { code: 1009, identifier: "INVALID_API_RESPONSE", message: "The server returned an unexpected response.", category: "General errors", retryable: false },
+  { code: 2001, identifier: "INVALID_FILE_METADATA", message: "Please check the file details and try again.", category: "File management", retryable: false },
+  { code: 2002, identifier: "FILE_UPLOAD_FAILED", message: "The file could not be uploaded. Please try again.", category: "File management", retryable: false },
+  { code: 2003, identifier: "STORAGE_QUOTA_EXCEEDED", message: "This website has reached its storage limit.", category: "File management", retryable: false },
+  { code: 2004, identifier: "FILE_TOO_LARGE", message: "The file exceeds the maximum allowed size.", category: "File management", retryable: false },
   { code: 2005, identifier: "UNSUPPORTED_FILE_TYPE", message: "This file type is not supported.", category: "File management", retryable: false },
   { code: 2006, identifier: "FILE_NOT_FOUND", message: "The requested file could not be found.", category: "File management", retryable: false },
-  { code: 2007, identifier: "FILE_DELETE_FAILED", message: "The file could not be deleted.", category: "File management", retryable: false },
-  { code: 2008, identifier: "FILE_REPLACE_FAILED", message: "The file could not be replaced.", category: "File management", retryable: false },
-  { code: 2009, identifier: "FILE_LIST_FAILED", message: "Your website's files could not be loaded.", category: "File management", retryable: false },
-  { code: 3001, identifier: "SUBDOMAIN_RESERVED", message: "That subdomain is reserved. Choose a different subdomain.", category: "Websites and subdomains", retryable: false },
-  { code: 3002, identifier: "SUBDOMAIN_TAKEN", message: "That subdomain is already registered.", category: "Websites and subdomains", retryable: false },
-  { code: 3003, identifier: "INVALID_SUBDOMAIN", message: "Please enter a valid subdomain.", category: "Websites and subdomains", retryable: false },
-  { code: 3004, identifier: "WEBSITE_CREATION_FAILED", message: "Your website could not be created.", category: "Websites and subdomains", retryable: false },
+  { code: 2007, identifier: "FILE_DELETE_FAILED", message: "The file could not be deleted. Please try again.", category: "File management", retryable: false },
+  { code: 2008, identifier: "FILE_REPLACE_FAILED", message: "The file could not be replaced. Please try again.", category: "File management", retryable: false },
+  { code: 2009, identifier: "FILE_LIST_FAILED", message: "The files could not be loaded. Please try again.", category: "File management", retryable: false },
+  { code: 3001, identifier: "SUBDOMAIN_RESERVED", message: "That website address is reserved and cannot be used.", category: "Websites and subdomains", retryable: false },
+  { code: 3002, identifier: "SUBDOMAIN_TAKEN", message: "That website address is already in use.", category: "Websites and subdomains", retryable: false },
+  { code: 3003, identifier: "INVALID_SUBDOMAIN", message: "Please enter a valid website address.", category: "Websites and subdomains", retryable: false },
+  { code: 3004, identifier: "WEBSITE_CREATION_FAILED", message: "The website could not be created. Please try again.", category: "Websites and subdomains", retryable: false },
   { code: 3005, identifier: "WEBSITE_NOT_FOUND", message: "The requested website could not be found.", category: "Websites and subdomains", retryable: false },
   { code: 4001, identifier: "EMAIL_VERIFICATION_REQUIRED", message: "Please verify your email address.", category: "Authentication", retryable: false },
   { code: 4002, identifier: "SESSION_EXPIRED", message: "Your session has expired. Please sign in again.", category: "Authentication", retryable: false },
-  { code: 4003, identifier: "INVALID_CREDENTIALS", message: "The provided credentials are incorrect.", category: "Authentication", retryable: false },
-  { code: 4004, identifier: "ACCOUNT_DISABLED", message: "This account is unavailable.", category: "Authentication", retryable: false },
-  { code: 5001, identifier: "PAYMENT_FAILED", message: "Your payment could not be completed.", category: "Billing and hosting", retryable: false },
-  { code: 5002, identifier: "HOSTING_INACTIVE", message: "This website's hosting is not active.", category: "Billing and hosting", retryable: false },
-  { code: 5003, identifier: "BILLING_UNAVAILABLE", message: "Billing is temporarily unavailable.", category: "Billing and hosting", retryable: false },
+  { code: 4003, identifier: "INVALID_CREDENTIALS", message: "The email or password is incorrect.", category: "Authentication", retryable: false },
+  { code: 4004, identifier: "ACCOUNT_DISABLED", message: "This account is currently unavailable.", category: "Authentication", retryable: false },
+  { code: 5001, identifier: "PAYMENT_FAILED", message: "The payment could not be completed. Please try again.", category: "Billing and hosting", retryable: false },
+  { code: 5002, identifier: "HOSTING_INACTIVE", message: "Hosting is not active for this website.", category: "Billing and hosting", retryable: false },
+  { code: 5003, identifier: "BILLING_UNAVAILABLE", message: "Billing is temporarily unavailable. Please try again.", category: "Billing and hosting", retryable: false },
   { code: 6001, identifier: "INVITATION_REQUIRED", message: "A valid invitation is required to register.", category: "Pre-alpha access", retryable: false },
   { code: 6002, identifier: "INVALID_INVITATION", message: "This invitation is invalid.", category: "Pre-alpha access", retryable: false },
   { code: 6003, identifier: "INVITATION_EXPIRED", message: "This invitation has expired.", category: "Pre-alpha access", retryable: false },
@@ -82,7 +86,20 @@ const definitionByIdentifier = new Map(
 );
 
 const legacyIdentifiers: Readonly<Record<string, number>> = Object.freeze({
+  INTERNAL_SERVER_ERROR: 1007,
+  AUTH_UNAVAILABLE: 1007,
+  PROJECT_NOT_FOUND: 3005,
   ORIGIN_DENIED: 1003,
+  CORS_PREFLIGHT_DENIED: 1003,
+  INVALID_TOKEN: 1004,
+  INVALID_PAGINATION: 1004,
+  INVALID_UPLOAD: 2001,
+  INVALID_PATH: 2001,
+  CONTENT_LENGTH_REQUIRED: 2001,
+  METHOD_NOT_ALLOWED: 1004,
+  PROJECT_LIMIT_REACHED: 1005,
+  PROJECT_BUSY: 1005,
+  FILE_ALREADY_EXISTS: 1005,
   SUBDOMAIN_UNAVAILABLE: 3002,
   RESERVED_SUBDOMAIN: 3001,
   DUPLICATE_SLUG: 3002,
@@ -93,20 +110,13 @@ const legacyIdentifiers: Readonly<Record<string, number>> = Object.freeze({
   PROJECT_SLUG_TAKEN: 3002,
   EMAIL_NOT_VERIFIED: 4001,
   EMAIL_UNVERIFIED: 4001,
-  AUTH_UNAVAILABLE: 1007,
   STORAGE_LIMIT_EXCEEDED: 2003,
-  INVALID_PATH: 1004,
-  INVALID_UPLOAD: 2002,
-  FILE_ALREADY_EXISTS: 1005,
   FILE_COUNT_LIMIT_EXCEEDED: 2003,
-  PROJECT_BUSY: 1005,
   GITHUB_REPOSITORY_INVALID: 1004,
   GITHUB_NOT_CONNECTED: 1005,
   GITHUB_SYNC_CONFLICT: 1005,
   GITHUB_REPOSITORY_TOO_LARGE: 2004,
   GITHUB_SYNC_FAILED: 1007,
-  CONTENT_LENGTH_REQUIRED: 1004,
-  INVALID_TOKEN: 1004,
 });
 
 const legacyMessages: Readonly<Record<string, string>> = Object.freeze({
@@ -271,13 +281,23 @@ export function isRetrySafeOperation(operation: string | undefined): boolean {
 export function makeTraceReference(): string {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-      const bytes = crypto.getRandomValues(new Uint8Array(4));
-      return `BBB-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+      const bytes = crypto.getRandomValues(new Uint8Array(6));
+      return `CLIENT-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
     }
   } catch {
     // Secure randomness may be unavailable in non-secure browser contexts.
   }
-  return `BBB-${Math.random().toString(16).slice(2, 10).padEnd(8, "0").toUpperCase()}`;
+  return `CLIENT-${Math.random().toString(16).slice(2, 14).padEnd(12, "0").toUpperCase()}`;
+}
+
+function isBackendReference(value: unknown): value is string {
+  return typeof value === "string" &&
+    (/^BBB-[A-Z][A-Z0-9]*-[A-F0-9]{12}$/.test(value) ||
+      /^BBB-[A-F0-9]{8}$/.test(value));
+}
+
+function isClientReference(value: unknown): value is string {
+  return typeof value === "string" && /^CLIENT-[A-F0-9]{12}$/.test(value);
 }
 
 function identifierDefinition(identifier: unknown): ErrorCodeDefinition | undefined {
@@ -303,12 +323,22 @@ export interface ParsedBackendError {
   readonly identifier?: string;
   readonly backendCode?: number;
   readonly safeMessage?: string;
+  readonly reference?: string;
+  readonly incidentRecorded?: boolean;
 }
 
 export function parseBackendError(
   payload: unknown,
 ): ParsedBackendError {
   if (!isRecord(payload)) return {};
+  const metadata = {
+    ...(isBackendReference(payload.reference)
+      ? { reference: payload.reference }
+      : {}),
+    ...(typeof payload.incidentRecorded === "boolean"
+      ? { incidentRecorded: payload.incidentRecorded }
+      : {}),
+  };
 
   const rawIdentifier =
     typeof payload.error === "string"
@@ -334,9 +364,9 @@ export function parseBackendError(
 
   if (typeof numericCode === "number") {
     if (!codeEntry || (identifierEntry && codeEntry.code !== identifierEntry.code)) {
-      return {};
+      return metadata;
     }
-    if (!identifierEntry && identifier) return {};
+    if (!identifierEntry && identifier) return metadata;
     const matchedIdentifier = preservedIdentifier ?? codeEntry.identifier;
     const trustedMessage =
       typeof payload.message === "string" &&
@@ -347,6 +377,7 @@ export function parseBackendError(
           ? fallbackLegacyMessage
           : undefined;
     return {
+      ...metadata,
       identifier: matchedIdentifier,
       backendCode: codeEntry.code,
       safeMessage: trustedMessage ?? codeEntry.message,
@@ -368,13 +399,14 @@ export function parseBackendError(
           ? fallbackLegacyMessage
           : undefined);
     return {
+      ...metadata,
       identifier: preservedIdentifier ?? identifierEntry.identifier,
       backendCode: identifierEntry.code,
       safeMessage,
     };
   }
 
-  return { identifier };
+  return { ...metadata, identifier };
 }
 
 function safeLabel(value: unknown): string | undefined {
@@ -401,6 +433,8 @@ export function formatErrorReport(
     | "reason"
     | "timestamp"
     | "reference"
+    | "referenceSource"
+    | "incidentRecorded"
     | "message"
   >,
 ): string {
@@ -410,9 +444,26 @@ export function formatErrorReport(
     !Number.isNaN(Date.parse(details.timestamp))
       ? details.timestamp
       : new Date().toISOString();
-  const reference = /^BBB-[A-F0-9]{8}$/.test(details.reference)
+  const reference = isBackendReference(details.reference) ||
+      isClientReference(details.reference)
     ? details.reference
     : makeTraceReference();
+  const message =
+    details.message === definition.message ||
+    Object.values(legacyMessages).includes(details.message)
+      ? details.message
+      : definition.message;
+  const referenceSource =
+    details.referenceSource ??
+    (isBackendReference(reference) ? "backend" : "client");
+  const incidentStatus =
+    referenceSource === "client"
+      ? "Frontend-only; not automatically recorded in D1"
+      : details.incidentRecorded === true
+        ? "Recorded by the backend"
+        : details.incidentRecorded === false
+          ? "Not confirmed in D1; use the reference for Worker-log correlation"
+          : "Recording status not provided by the backend";
   return [
     "BuiltByBuzz Hosting — Error Report",
     "",
@@ -428,8 +479,10 @@ export function formatErrorReport(
     `Operation: ${safeLabel(details.operation) ?? "Unknown"}`,
     `Affected Field: ${typeof details.field === "string" && SAFE_FIELDS.has(details.field) ? details.field : "Unknown"}`,
     `Reason: ${safeReason(details.reason) ?? definition.message}`,
+    `Message: ${message}`,
     `Timestamp (UTC): ${timestamp}`,
     `Reference: ${reference}`,
+    `Incident recording: ${incidentStatus}`,
   ].join("\n");
 }
 
@@ -503,12 +556,20 @@ export function normalizeError(
       ? record.timestamp
       : undefined;
   const existingReference =
-    typeof record?.reference === "string" &&
-    /^BBB-[A-F0-9]{8}$/.test(record.reference)
-      ? record.reference
-      : undefined;
+    isBackendReference(context.reference) || isClientReference(context.reference)
+      ? context.reference
+      : isBackendReference(record?.reference) || isClientReference(record?.reference)
+        ? record.reference
+        : undefined;
   const timestamp = existingTimestamp ?? new Date().toISOString();
   const reference = existingReference ?? makeTraceReference();
+  const referenceSource: NormalizedError["referenceSource"] =
+    isBackendReference(reference) ? "backend" : "client";
+  const incidentRecorded =
+    context.incidentRecorded ??
+    (typeof record?.incidentRecorded === "boolean"
+      ? record.incidentRecorded
+      : undefined);
   const component = safeLabel(context.component ?? record?.component);
   const operation = safeLabel(context.operation ?? record?.operation);
   const rawField = context.field ?? record?.field;
@@ -534,6 +595,8 @@ export function normalizeError(
     field,
     timestamp,
     reference,
+    referenceSource,
+    incidentRecorded,
     retryable,
   };
   return { ...base, report: formatErrorReport(base) };

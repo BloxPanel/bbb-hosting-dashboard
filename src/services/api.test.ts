@@ -131,7 +131,7 @@ describe("confirmed API requests", () => {
     [400, "check the information"],
     [401, "session has expired"],
     [403, "permission to complete"],
-    [409, "resource already exists"],
+    [409, "conflicts with the current resource state"],
     [429, "Too many attempts"],
     [503, "temporarily unavailable"],
   ])(
@@ -167,6 +167,8 @@ describe("confirmed API requests", () => {
           error: "UNAUTHORIZED",
           code: 1002,
           message: "Please sign in to continue.",
+          reference: "BBB-AUTH-8F2A91C74D60",
+          incidentRecorded: true,
         }),
         { status: 401, headers: { "Content-Type": "application/json" } },
       ),
@@ -183,7 +185,32 @@ describe("confirmed API requests", () => {
       bbbCode: 1002,
       identifier: "UNAUTHORIZED",
       message: "Please sign in to continue.",
+      reference: "BBB-AUTH-8F2A91C74D60",
+      referenceSource: "backend",
+      incidentRecorded: true,
     });
+  });
+  it("uses a clearly client-side reference when an API error omits diagnostics", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ success: false, error: "UNAUTHORIZED", code: 1002 }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    let failure: unknown;
+    try {
+      await files.list("project_1");
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      bbbCode: 1002,
+      referenceSource: "client",
+      incidentRecorded: undefined,
+    });
+    expect((failure as { reference: string }).reference).toMatch(
+      /^CLIENT-[A-F0-9]{12}$/,
+    );
   });
   it("does not display arbitrary messages or trust mismatched numeric codes", async () => {
     mockFetch.mockResolvedValueOnce(
@@ -487,7 +514,7 @@ describe("confirmed API requests", () => {
   });
   it("reports network/CORS, HTTP, and malformed JSON errors", async () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    await expect(connectivity.health()).rejects.toThrow(/contact the service/);
+    await expect(connectivity.health()).rejects.toThrow(/network connection could not be established/);
     mockFetch.mockResolvedValueOnce(new Response("denied", { status: 403 }));
     await expect(connectivity.health()).rejects.toThrow(/permission to complete/);
     mockFetch.mockResolvedValueOnce(

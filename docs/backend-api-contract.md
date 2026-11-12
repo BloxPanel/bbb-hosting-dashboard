@@ -612,6 +612,15 @@ existing BBB codes for invalid input (1004), forbidden (1003), conflict (1005),
 file too large (2004), rate limited (1006), service unavailable (1007), and
 storage quota exceeded (2003).
 
+Every API error also includes the backend-generated `reference` and the
+`incidentRecorded` boolean. Keep and display the supplied reference when
+reporting an error; do not generate a second dashboard reference. When
+`incidentRecorded` is `false`, the Worker could not persist the incident (or
+its write budget was exhausted), so the reference is available only in safe
+Worker logs and is not searchable in D1. See
+[`error-protocol.md`](./error-protocol.md) for registry categories and the
+complete response contract.
+
 ### Disconnect
 
 ```http

@@ -108,7 +108,7 @@ describe("project file API contracts", () => {
         },
         "project_1",
       ),
-    ).toThrow(/unexpected file information/);
+    ).toThrow(/check the file details/);
     expect(() => parseStorage({ success: true, storage: {} })).toThrow(
       /unexpected response/,
     );

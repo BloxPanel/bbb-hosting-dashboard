@@ -293,6 +293,8 @@ export class ApiError extends Error {
   public readonly field?: string;
   public readonly timestamp: string;
   public readonly reference: string;
+  public readonly referenceSource: "backend" | "client";
+  public readonly incidentRecorded?: boolean;
   public readonly retryable: boolean;
 
   constructor(
@@ -310,11 +312,15 @@ export class ApiError extends Error {
         code,
         identifier: details.identifier,
         bbbCode: details.backendCode,
+        reference: details.reference,
+        incidentRecorded: details.incidentRecorded,
       },
       {
         status,
         identifier: details.identifier ?? (code || undefined),
         backendCode: details.backendCode,
+        reference: details.reference,
+        incidentRecorded: details.incidentRecorded,
         operation: details.operation,
         component: details.component,
         field: details.field,
@@ -407,6 +413,8 @@ export class ApiError extends Error {
     this.field = normalized.field;
     this.timestamp = normalized.timestamp;
     this.reference = normalized.reference;
+    this.referenceSource = normalized.referenceSource;
+    this.incidentRecorded = normalized.incidentRecorded;
     this.retryable = normalized.retryable;
   }
 
@@ -421,6 +429,8 @@ export class ApiError extends Error {
       reason: this.reason ?? this.message,
       timestamp: this.timestamp,
       reference: this.reference,
+      referenceSource: this.referenceSource,
+      incidentRecorded: this.incidentRecorded,
       message: this.message,
     });
   }
@@ -451,6 +461,8 @@ function makeApiError(
       identifier: parsed.identifier,
       backendCode: parsed.backendCode,
       safeMessage: parsed.safeMessage,
+      reference: parsed.reference,
+      incidentRecorded: parsed.incidentRecorded,
       operation: capability,
       component: "API Client",
       reason,
